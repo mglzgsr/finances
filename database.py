@@ -5,11 +5,13 @@ Usa sqlite3 estándar, sin dependencias extra.
 
 import sqlite3
 import os
+from pathlib import Path
 from datetime import datetime, date
 from typing import Optional
 from collections import defaultdict
 
-DB_PATH = os.environ.get("DB_PATH", "../data/finance.db")
+_DEFAULT_DB = Path(__file__).parent / "data" / "finance.db"
+DB_PATH = os.environ.get("DB_PATH", str(_DEFAULT_DB))
 
 # ── Schema ────────────────────────────────────────────────────────────────────
 def init_db():

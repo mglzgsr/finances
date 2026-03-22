@@ -8,7 +8,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 import tempfile, os, shutil
+from pathlib import Path
 from typing import Optional
+
+BASE_DIR = Path(__file__).parent
+FRONTEND_DIR = BASE_DIR / "frontend"
 
 from database import init_db, save_transactions, get_summary, get_transactions, get_monthly_flow, get_categories_breakdown
 from parsers import detect_bank, parse_lloyds, parse_hsbc
@@ -27,11 +31,11 @@ def startup():
     init_db()
 
 # ── Static frontend ──────────────────────────────────────────────────────────
-app.mount("/static", StaticFiles(directory="../frontend"), name="static")
+app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
 @app.get("/")
 def root():
-    return FileResponse("../frontend/index.html")
+    return FileResponse(FRONTEND_DIR / "index.html")
 
 # ── Upload CSV ───────────────────────────────────────────────────────────────
 @app.post("/api/upload")
