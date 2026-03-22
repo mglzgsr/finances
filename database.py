@@ -150,18 +150,25 @@ def get_categories_breakdown(year=None, month=None) -> list:
 
 
 def get_transactions(year=None, month=None, category=None, bank=None, limit=50, offset=0) -> dict:
-    extra_conds = []
+    conds, params = [], []
+    if year:
+        conds.append("strftime('%Y', date) = ?")
+        params.append(str(year))
+    if month:
+        conds.append("strftime('%m', date) = ?")
+        params.append(f"{month:02d}")
     if category:
-        extra_conds.append(f"category = '{category}'")
+        conds.append("category = ?")
+        params.append(category)
     if bank:
-        extra_conds.append(f"bank = '{bank}'")
-
-    where, params = _where_clause(year, month, " AND ".join(extra_conds))
+        conds.append("bank = ?")
+        params.append(bank)
+    where = ("WHERE " + " AND ".join(conds)) if conds else ""
 
     with get_conn() as conn:
         total = conn.execute(f"SELECT COUNT(*) FROM transactions {where}", params).fetchone()[0]
         rows  = conn.execute(f"""
-            SELECT date, description, tx_type, is_debit, amount, balance, category, bank
+            SELECT id, date, description, tx_type, is_debit, amount, balance, category, bank
             FROM transactions {where}
             ORDER BY date DESC, id DESC
             LIMIT ? OFFSET ?
@@ -173,10 +180,27 @@ def get_transactions(year=None, month=None, category=None, bank=None, limit=50, 
         "offset": offset,
         "transactions": [
             {
-                "date": r[0], "description": r[1], "tx_type": r[2],
-                "is_debit": bool(r[3]), "amount": r[4], "balance": r[5],
-                "category": r[6], "bank": r[7],
+                "id": r[0], "date": r[1], "description": r[2], "tx_type": r[3],
+                "is_debit": bool(r[4]), "amount": r[5], "balance": r[6],
+                "category": r[7], "bank": r[8],
             }
             for r in rows
         ],
     }
+
+
+def update_transaction_category(tx_id: int, category: str) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE transactions SET category = ? WHERE id = ?",
+            (category, tx_id)
+        )
+        return cur.rowcount > 0
+
+
+def get_all_categories() -> list:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT category FROM transactions ORDER BY category"
+        ).fetchall()
+    return [r[0] for r in rows]

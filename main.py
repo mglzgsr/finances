@@ -7,6 +7,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 import tempfile, os, shutil
 from pathlib import Path
 from typing import Optional
@@ -14,14 +15,14 @@ from typing import Optional
 BASE_DIR = Path(__file__).parent
 FRONTEND_DIR = BASE_DIR / "frontend"
 
-from database import init_db, save_transactions, get_summary, get_transactions, get_monthly_flow, get_categories_breakdown
-from parsers import detect_bank, parse_lloyds, parse_hsbc
+from database import init_db, save_transactions, get_summary, get_transactions, get_monthly_flow, get_categories_breakdown, update_transaction_category, get_all_categories
+from parsers import detect_bank, parse_lloyds, parse_hsbc, CATEGORY_RULES
 
 app = FastAPI(title="Finance Dashboard", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=r"http://192\.168\.0\.\d{1,3}(:\d+)?|http://localhost(:\d+)?",
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -94,3 +95,20 @@ def transactions(
     offset: int = 0,
 ):
     return get_transactions(year=year, month=month, category=category, bank=bank, limit=limit, offset=offset)
+
+
+class CategoryUpdate(BaseModel):
+    category: str
+
+@app.patch("/api/transactions/{tx_id}/category")
+def patch_category(tx_id: int, body: CategoryUpdate):
+    ok = update_transaction_category(tx_id, body.category)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return {"ok": True}
+
+@app.get("/api/category-list")
+def category_list():
+    db_cats = get_all_categories()
+    all_cats = sorted(set(list(CATEGORY_RULES.keys()) + db_cats + ["Otros"]))
+    return all_cats
