@@ -15,7 +15,7 @@ from typing import Optional
 BASE_DIR = Path(__file__).parent
 FRONTEND_DIR = BASE_DIR / "frontend"
 
-from database import init_db, save_transactions, get_summary, get_transactions, get_monthly_flow, get_categories_breakdown, update_transaction_category, get_all_categories
+from database import init_db, save_transactions, get_summary, get_transactions, get_monthly_flow, get_categories_breakdown, update_transaction_category, get_all_categories, get_setting, set_setting
 from parsers import detect_bank, parse_lloyds, parse_hsbc, CATEGORY_RULES
 
 app = FastAPI(title="Finance Dashboard", version="1.0.0")
@@ -112,3 +112,16 @@ def category_list():
     db_cats = get_all_categories()
     all_cats = sorted(set(list(CATEGORY_RULES.keys()) + db_cats + ["Otros"]))
     return all_cats
+
+
+class SettingsUpdate(BaseModel):
+    initial_balance: float
+
+@app.get("/api/settings")
+def get_settings():
+    return {"initial_balance": float(get_setting("initial_balance", 0))}
+
+@app.patch("/api/settings")
+def patch_settings(body: SettingsUpdate):
+    set_setting("initial_balance", str(body.initial_balance))
+    return {"ok": True}

@@ -34,6 +34,12 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_date     ON transactions(date)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_category ON transactions(category)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_bank     ON transactions(bank)")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
 
 def get_conn():
     return sqlite3.connect(DB_PATH)
@@ -204,3 +210,17 @@ def get_all_categories() -> list:
             "SELECT DISTINCT category FROM transactions ORDER BY category"
         ).fetchall()
     return [r[0] for r in rows]
+
+
+def get_setting(key: str, default=None):
+    with get_conn() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    return row[0] if row else default
+
+
+def set_setting(key: str, value: str):
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, value)
+        )

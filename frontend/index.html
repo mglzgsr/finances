@@ -255,6 +255,34 @@
   /* Make category items look clickable */
   .cat-drilldown { cursor:pointer; border-radius:8px; padding:4px 6px; margin:-4px -6px; transition:background .15s; }
   .cat-drilldown:hover { background:var(--surface2); }
+
+  /* Settings */
+  .settings-btn {
+    display:flex; align-items:center; justify-content:center;
+    width:36px; height:36px; background:var(--surface2); border:1px solid var(--border);
+    color:var(--muted); border-radius:8px; cursor:pointer; font-size:16px;
+    transition:border-color .2s, color .2s;
+  }
+  .settings-btn:hover { border-color:var(--accent); color:var(--accent); }
+  .settings-modal {
+    display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:300;
+    align-items:center; justify-content:center;
+  }
+  .settings-modal.visible { display:flex; }
+  .settings-box {
+    background:var(--surface2); border:1px solid var(--border); border-radius:14px;
+    padding:28px; width:380px; display:flex; flex-direction:column; gap:20px;
+  }
+  .settings-title { font-family:'Syne',sans-serif; font-size:16px; font-weight:700; }
+  .settings-field { display:flex; flex-direction:column; gap:8px; }
+  .settings-label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; }
+  .settings-hint { font-size:11px; color:var(--muted); line-height:1.5; }
+  .settings-input {
+    background:var(--surface); border:1px solid var(--border); color:var(--text);
+    font-family:'DM Mono',monospace; font-size:14px; padding:10px 14px;
+    border-radius:8px; outline:none; width:100%;
+  }
+  .settings-input:focus { border-color:var(--accent); }
 </style>
 </head>
 <body>
@@ -265,6 +293,7 @@
     <select class="period-select" id="periodSelect">
       <option value="">Todo el histórico</option>
     </select>
+    <button class="settings-btn" id="settingsBtn" title="Ajustes">⚙</button>
     <button class="upload-btn" id="uploadToggle">⬆ Subir CSV</button>
   </div>
 </header>
@@ -285,7 +314,7 @@
   <div class="kpi-row">
     <div class="kpi-card"><div class="kpi-label">Ingresos</div><div class="kpi-value green" id="kpiIncome">—</div><div class="kpi-delta" id="kpiIncomeDelta"></div></div>
     <div class="kpi-card"><div class="kpi-label">Gastos</div><div class="kpi-value red" id="kpiExpenses">—</div><div class="kpi-delta" id="kpiExpensesDelta"></div></div>
-    <div class="kpi-card"><div class="kpi-label">Balance neto</div><div class="kpi-value accent" id="kpiNet">—</div><div class="kpi-delta" id="kpiNetDelta"></div></div>
+    <div class="kpi-card"><div class="kpi-label" id="kpiNetLabel">Balance neto</div><div class="kpi-value accent" id="kpiNet">—</div><div class="kpi-delta" id="kpiNetDelta"></div></div>
     <div class="kpi-card"><div class="kpi-label">Tasa de ahorro</div><div class="kpi-value blue" id="kpiSavings">—</div><div class="kpi-delta" id="kpiTxCount"></div></div>
   </div>
 
@@ -345,6 +374,22 @@
   <div class="cat-panel-body" id="catPanelBody"></div>
 </div>
 
+<!-- Settings modal -->
+<div class="settings-modal" id="settingsModal">
+  <div class="settings-box">
+    <div class="settings-title">⚙ Ajustes</div>
+    <div class="settings-field">
+      <div class="settings-label">Saldo inicial</div>
+      <input class="settings-input" id="settingsInitialBalance" type="number" step="0.01" min="0" placeholder="0.00">
+      <div class="settings-hint">Importe total en el banco antes del primer CSV importado.<br>Se suma al balance cuando ves todo el histórico.</div>
+    </div>
+    <div class="cat-modal-actions">
+      <button class="cat-modal-cancel" id="settingsCancel">Cancelar</button>
+      <button class="cat-modal-confirm" id="settingsConfirm">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Category edit modal -->
 <div class="cat-modal" id="catModal">
   <div class="cat-modal-box">
@@ -363,6 +408,7 @@ const API = '';  // mismo origen — FastAPI sirve el HTML
 let flowChart = null, donutChart = null;
 let currentYear = null, currentMonth = null;
 let categoryListCache = null;
+let initialBalance = 0;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = v => '£' + Number(v).toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2});
@@ -415,13 +461,17 @@ async function loadSummary() {
   const d = await fetch(`${API}/api/summary?${params}`).then(r => r.json()).catch(() => null);
   if (!d) return;
 
+  const isAllTime = !currentYear && !currentMonth;
+  const displayNet = isAllTime && initialBalance ? d.net + initialBalance : d.net;
+
   document.getElementById('kpiIncome').textContent   = fmt(d.income);
   document.getElementById('kpiExpenses').textContent = fmt(d.expenses);
-  document.getElementById('kpiNet').textContent      = fmt(d.net);
+  document.getElementById('kpiNet').textContent      = fmt(displayNet);
+  document.getElementById('kpiNetLabel').textContent = isAllTime && initialBalance ? 'Saldo estimado' : 'Balance neto';
   document.getElementById('kpiSavings').textContent  = d.savings_rate + '%';
   document.getElementById('kpiTxCount').textContent  = d.tx_count + ' transacciones';
-  document.getElementById('kpiNetDelta').textContent = d.net >= 0 ? '▲ Positivo' : '▼ Negativo';
-  document.getElementById('kpiNetDelta').className   = 'kpi-delta ' + (d.net >= 0 ? 'up' : 'down');
+  document.getElementById('kpiNetDelta').textContent = displayNet >= 0 ? '▲ Positivo' : '▼ Negativo';
+  document.getElementById('kpiNetDelta').className   = 'kpi-delta ' + (displayNet >= 0 ? 'up' : 'down');
 }
 
 // ── Flow chart ───────────────────────────────────────────────────────────────
@@ -550,6 +600,43 @@ async function loadTransactions() {
       </div>`;
   });
 }
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+async function loadSettings() {
+  const s = await fetch(`${API}/api/settings`).then(r => r.json()).catch(() => ({}));
+  initialBalance = s.initial_balance || 0;
+}
+
+document.getElementById('settingsBtn').addEventListener('click', () => {
+  document.getElementById('settingsInitialBalance').value = initialBalance || '';
+  document.getElementById('settingsModal').classList.add('visible');
+});
+
+document.getElementById('settingsCancel').addEventListener('click', () => {
+  document.getElementById('settingsModal').classList.remove('visible');
+});
+
+document.getElementById('settingsModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) e.currentTarget.classList.remove('visible');
+});
+
+document.getElementById('settingsConfirm').addEventListener('click', async () => {
+  const val = parseFloat(document.getElementById('settingsInitialBalance').value) || 0;
+  const ok = await fetch(`${API}/api/settings`, {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({initial_balance: val}),
+  }).then(r => r.ok).catch(() => false);
+
+  document.getElementById('settingsModal').classList.remove('visible');
+  if (ok) {
+    initialBalance = val;
+    showToast('Ajustes guardados', 'ok');
+    await loadSummary();
+  } else {
+    showToast('Error al guardar', 'err');
+  }
+});
 
 // ── Category edit modal ───────────────────────────────────────────────────────
 let editingTxId = null;
@@ -720,8 +807,10 @@ if ('serviceWorker' in navigator) {
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────────
-populatePeriods();
-loadAll();
+(async () => {
+  await loadSettings();
+  await Promise.all([populatePeriods(), loadAll()]);
+})();
 </script>
 </body>
 </html>
