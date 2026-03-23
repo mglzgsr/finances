@@ -449,8 +449,8 @@ let initialBalanceHSBC = null;
 let lastIncome = 0, lastExpenses = 0;
 
 // ── Chart colours (dark / light) ─────────────────────────────────────────────
-const CHART_DARK  = { muted:'#6b7280', grid:'#2a2d35', tipBg:'#1e2027', tipBorder:'#2a2d35', tipTitle:'#e8eaf0' };
-const CHART_LIGHT = { muted:'#9ca3af', grid:'#e5e7eb', tipBg:'#ffffff', tipBorder:'#e2e8f0', tipTitle:'#111827' };
+const CHART_DARK  = { muted:'#6b7280', grid:'#2a2d35', tipBg:'#1e2027', tipBorder:'#2a2d35', tipTitle:'#e8eaf0', segBorder:'#0e0f11' };
+const CHART_LIGHT = { muted:'#9ca3af', grid:'#e5e7eb', tipBg:'#ffffff', tipBorder:'#e2e8f0', tipTitle:'#111827', segBorder:'#f4f5f7' };
 let CC = CHART_DARK;
 
 // ── Theme toggle ──────────────────────────────────────────────────────────────
@@ -656,7 +656,7 @@ async function loadCategories() {
   const dCtx = document.getElementById('donutChart').getContext('2d');
   donutChart = new Chart(dCtx, {
     type:'doughnut',
-    data:{ labels:dLabels, datasets:[{ data:dData, backgroundColor:dColors.map(c=>c+'cc'), borderColor:'#0e0f11', borderWidth:3, hoverOffset:6 }] },
+    data:{ labels:dLabels, datasets:[{ data:dData, backgroundColor:dColors.map(c=>c+'cc'), borderColor:CC.segBorder, borderWidth:2, hoverOffset:6 }] },
     options:{ responsive:true, cutout:'72%', plugins:{
       legend:{ position:'right', labels:{ color:CC.muted, font:{family:'DM Mono',size:10}, boxWidth:8, padding:8 } },
       tooltip:{ backgroundColor:CC.tipBg, borderColor:CC.tipBorder, borderWidth:1, titleColor:CC.tipTitle, bodyColor:CC.muted, callbacks:{ label: c => ` ${fmt(c.parsed)}` } }
