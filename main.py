@@ -15,7 +15,11 @@ from typing import Optional
 BASE_DIR = Path(__file__).parent
 FRONTEND_DIR = BASE_DIR / "frontend"
 
-from database import init_db, save_transactions, get_summary, get_transactions, get_monthly_flow, get_categories_breakdown, update_transaction_category, get_all_categories, get_setting, set_setting
+from database import (
+    init_db, save_transactions, get_summary, get_transactions,
+    get_monthly_flow, get_categories_breakdown, update_transaction_category,
+    get_all_categories, get_setting, set_setting, get_account_balance,
+)
 from parsers import detect_bank, parse_lloyds, parse_hsbc, CATEGORY_RULES
 
 app = FastAPI(title="Finance Dashboard", version="1.0.0")
@@ -44,7 +48,6 @@ async def upload_csv(files: list[UploadFile] = File(...)):
     results = []
 
     for file in files:
-        # Guardar temporalmente
         suffix = os.path.splitext(file.filename)[1]
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             shutil.copyfileobj(file.file, tmp)
@@ -74,16 +77,24 @@ async def upload_csv(files: list[UploadFile] = File(...)):
 
 # ── Data endpoints ───────────────────────────────────────────────────────────
 @app.get("/api/summary")
-def summary(year: Optional[int] = None, month: Optional[int] = None):
-    return get_summary(year=year, month=month)
+def summary(
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    bank: Optional[str] = None,
+):
+    return get_summary(year=year, month=month, bank=bank)
 
 @app.get("/api/monthly-flow")
-def monthly_flow(months: int = 6):
-    return get_monthly_flow(months=months)
+def monthly_flow(months: int = 6, bank: Optional[str] = None):
+    return get_monthly_flow(months=months, bank=bank)
 
 @app.get("/api/categories")
-def categories(year: Optional[int] = None, month: Optional[int] = None):
-    return get_categories_breakdown(year=year, month=month)
+def categories(
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    bank: Optional[str] = None,
+):
+    return get_categories_breakdown(year=year, month=month, bank=bank)
 
 @app.get("/api/transactions")
 def transactions(
@@ -95,6 +106,14 @@ def transactions(
     offset: int = 0,
 ):
     return get_transactions(year=year, month=month, category=category, bank=bank, limit=limit, offset=offset)
+
+@app.get("/api/balance")
+def balance(
+    bank: str,
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+):
+    return get_account_balance(bank=bank, year=year, month=month)
 
 
 class CategoryUpdate(BaseModel):
@@ -115,13 +134,15 @@ def category_list():
 
 
 class SettingsUpdate(BaseModel):
-    initial_balance: float
+    initial_balance_hsbc: Optional[float] = None
 
 @app.get("/api/settings")
 def get_settings():
-    return {"initial_balance": float(get_setting("initial_balance", 0))}
+    val = get_setting("initial_balance_hsbc")
+    return {"initial_balance_hsbc": float(val) if val is not None else None}
 
 @app.patch("/api/settings")
 def patch_settings(body: SettingsUpdate):
-    set_setting("initial_balance", str(body.initial_balance))
+    if body.initial_balance_hsbc is not None:
+        set_setting("initial_balance_hsbc", str(body.initial_balance_hsbc))
     return {"ok": True}

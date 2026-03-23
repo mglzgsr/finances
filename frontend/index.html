@@ -39,6 +39,13 @@
   @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.8)} }
 
   .header-right { display:flex; align-items:center; gap:16px; }
+  .bank-switcher { display:flex; gap:4px; }
+  .bank-btn {
+    font-family:'DM Mono',monospace; font-size:11px; padding:6px 14px;
+    border-radius:8px; border:1px solid var(--border); background:transparent;
+    color:var(--muted); cursor:pointer; transition:all .2s;
+  }
+  .bank-btn.active { background:var(--surface2); border-color:var(--accent); color:var(--text); }
   .period-select {
     background:var(--surface2); border:1px solid var(--border); color:var(--text);
     font-family:'DM Mono',monospace; font-size:11px; padding:6px 12px;
@@ -290,6 +297,10 @@
 <header>
   <div class="logo"><div class="logo-dot"></div>FINANCES</div>
   <div class="header-right">
+    <div class="bank-switcher">
+      <button class="bank-btn active" data-bank="Lloyds">Lloyds</button>
+      <button class="bank-btn" data-bank="HSBC">HSBC</button>
+    </div>
     <select class="period-select" id="periodSelect">
       <option value="">Todo el histórico</option>
     </select>
@@ -312,10 +323,10 @@
 
   <!-- KPIs -->
   <div class="kpi-row">
-    <div class="kpi-card"><div class="kpi-label">Ingresos</div><div class="kpi-value green" id="kpiIncome">—</div><div class="kpi-delta" id="kpiIncomeDelta"></div></div>
+    <div class="kpi-card"><div class="kpi-label">Ingresos</div><div class="kpi-value green" id="kpiIncome">—</div><div class="kpi-delta" id="kpiTxCount"></div></div>
     <div class="kpi-card"><div class="kpi-label">Gastos</div><div class="kpi-value red" id="kpiExpenses">—</div><div class="kpi-delta" id="kpiExpensesDelta"></div></div>
-    <div class="kpi-card"><div class="kpi-label" id="kpiNetLabel">Balance neto</div><div class="kpi-value accent" id="kpiNet">—</div><div class="kpi-delta" id="kpiNetDelta"></div></div>
-    <div class="kpi-card"><div class="kpi-label">Tasa de ahorro</div><div class="kpi-value blue" id="kpiSavings">—</div><div class="kpi-delta" id="kpiTxCount"></div></div>
+    <div class="kpi-card"><div class="kpi-label">Balance periodo</div><div class="kpi-value accent" id="kpiNet">—</div><div class="kpi-delta" id="kpiNetDelta"></div></div>
+    <div class="kpi-card"><div class="kpi-label" id="kpiBalanceLabel">Saldo actual</div><div class="kpi-value blue" id="kpiBalance">—</div><div class="kpi-delta" id="kpiBalanceDelta"></div></div>
   </div>
 
   <!-- Flow chart + donut -->
@@ -379,9 +390,12 @@
   <div class="settings-box">
     <div class="settings-title">⚙ Ajustes</div>
     <div class="settings-field">
-      <div class="settings-label">Saldo inicial</div>
+      <div class="settings-label">Saldo inicial HSBC</div>
       <input class="settings-input" id="settingsInitialBalance" type="number" step="0.01" min="0" placeholder="0.00">
-      <div class="settings-hint">Importe total en el banco antes del primer CSV importado.<br>Se suma al balance cuando ves todo el histórico.</div>
+      <div class="settings-hint">Importe en HSBC antes del primer extracto importado.<br>Se usa para calcular el saldo real de cada mes.</div>
+    </div>
+    <div class="settings-hint" style="border-left:2px solid var(--border);padding-left:10px">
+      💡 El saldo de <strong>Lloyds</strong> se lee automáticamente del CSV — no necesita configuración.
     </div>
     <div class="cat-modal-actions">
       <button class="cat-modal-cancel" id="settingsCancel">Cancelar</button>
@@ -407,8 +421,9 @@
 const API = '';  // mismo origen — FastAPI sirve el HTML
 let flowChart = null, donutChart = null;
 let currentYear = null, currentMonth = null;
+let currentBank = 'Lloyds';
 let categoryListCache = null;
-let initialBalance = 0;
+let initialBalanceHSBC = null;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = v => '£' + Number(v).toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2});
@@ -430,8 +445,9 @@ function parsePeriod(val) {
 
 // ── Period selector ──────────────────────────────────────────────────────────
 async function populatePeriods() {
-  const data = await fetch(`${API}/api/monthly-flow?months=36`).then(r => r.json()).catch(() => []);
+  const data = await fetch(`${API}/api/monthly-flow?months=36&bank=${currentBank}`).then(r => r.json()).catch(() => []);
   const sel = document.getElementById('periodSelect');
+  sel.innerHTML = '<option value="">Todo el histórico</option>';
   data.forEach(d => {
     const [y, m] = d.month.split('-');
     const label = new Date(y, m-1).toLocaleDateString('es', {month:'long', year:'numeric'});
@@ -448,37 +464,68 @@ document.getElementById('periodSelect').addEventListener('change', e => {
   loadAll();
 });
 
+// ── Bank switcher ─────────────────────────────────────────────────────────────
+document.querySelectorAll('.bank-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    document.querySelectorAll('.bank-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentBank = btn.dataset.bank;
+    currentYear = null;
+    currentMonth = null;
+    document.getElementById('periodSelect').value = '';
+    await Promise.all([populatePeriods(), loadAll()]);
+  });
+});
+
 // ── Load all data ─────────────────────────────────────────────────────────────
 async function loadAll() {
-  await Promise.all([loadSummary(), loadFlow(), loadCategories(), loadTransactions()]);
+  await Promise.all([loadSummary(), loadBalance(), loadFlow(), loadCategories(), loadTransactions()]);
 }
 
 // ── Summary ──────────────────────────────────────────────────────────────────
 async function loadSummary() {
-  const params = new URLSearchParams();
+  const params = new URLSearchParams({ bank: currentBank });
   if (currentYear)  params.set('year',  currentYear);
   if (currentMonth) params.set('month', currentMonth);
   const d = await fetch(`${API}/api/summary?${params}`).then(r => r.json()).catch(() => null);
   if (!d) return;
 
-  const isAllTime = !currentYear && !currentMonth;
-  const displayNet = isAllTime && initialBalance ? d.net + initialBalance : d.net;
-
   document.getElementById('kpiIncome').textContent   = fmt(d.income);
   document.getElementById('kpiExpenses').textContent = fmt(d.expenses);
-  document.getElementById('kpiNet').textContent      = fmt(displayNet);
-  document.getElementById('kpiNetLabel').textContent = isAllTime && initialBalance ? 'Saldo estimado' : 'Balance neto';
-  document.getElementById('kpiSavings').textContent  = d.savings_rate + '%';
+  document.getElementById('kpiNet').textContent      = fmt(d.net);
   document.getElementById('kpiTxCount').textContent  = d.tx_count + ' transacciones';
-  document.getElementById('kpiNetDelta').textContent = displayNet >= 0 ? '▲ Positivo' : '▼ Negativo';
-  document.getElementById('kpiNetDelta').className   = 'kpi-delta ' + (displayNet >= 0 ? 'up' : 'down');
+  document.getElementById('kpiNetDelta').textContent = d.net >= 0
+    ? `▲ ${d.savings_rate}% ahorro` : `▼ ${d.savings_rate}% ahorro`;
+  document.getElementById('kpiNetDelta').className   = 'kpi-delta ' + (d.net >= 0 ? 'up' : 'down');
+}
+
+// ── Balance real ──────────────────────────────────────────────────────────────
+async function loadBalance() {
+  const params = new URLSearchParams({ bank: currentBank });
+  if (currentYear)  params.set('year',  currentYear);
+  if (currentMonth) params.set('month', currentMonth);
+  const b = await fetch(`${API}/api/balance?${params}`).then(r => r.json()).catch(() => null);
+
+  const isMonthly = !!(currentYear && currentMonth);
+  document.getElementById('kpiBalanceLabel').textContent = isMonthly ? 'Saldo fin de mes' : 'Saldo actual';
+
+  if (!b || b.current === null || b.current === undefined) {
+    document.getElementById('kpiBalance').textContent = '—';
+    document.getElementById('kpiBalanceDelta').textContent =
+      currentBank === 'HSBC' ? 'Configura en ⚙ ajustes' : '';
+    return;
+  }
+
+  document.getElementById('kpiBalance').textContent = fmt(b.current);
+  document.getElementById('kpiBalanceDelta').textContent = b.previous !== null && b.previous !== undefined
+    ? 'Inicio: ' + fmt(b.previous) : '';
 }
 
 // ── Flow chart ───────────────────────────────────────────────────────────────
 let currentMonths = 6;
 async function loadFlow(months = currentMonths) {
   currentMonths = months;
-  const data = await fetch(`${API}/api/monthly-flow?months=${months}`).then(r => r.json()).catch(() => []);
+  const data = await fetch(`${API}/api/monthly-flow?months=${months}&bank=${currentBank}`).then(r => r.json()).catch(() => []);
 
   const labels   = data.map(d => { const [y,m] = d.month.split('-'); return new Date(y,m-1).toLocaleDateString('es',{month:'short'}); });
   const income   = data.map(d => d.income);
@@ -523,7 +570,7 @@ const CAT_ICONS = {
 const CAT_COLORS = ['#5b6cff','#4ade80','#f87171','#fbbf24','#c084fc','#38bdf8','#c8f135','#fb923c','#f472b6','#34d399'];
 
 async function loadCategories() {
-  const params = new URLSearchParams();
+  const params = new URLSearchParams({ bank: currentBank });
   if (currentYear)  params.set('year',  currentYear);
   if (currentMonth) params.set('month', currentMonth);
   const cats = await fetch(`${API}/api/categories?${params}`).then(r=>r.json()).catch(()=>[]);
@@ -572,7 +619,7 @@ async function loadCategories() {
 
 // ── Transactions ─────────────────────────────────────────────────────────────
 async function loadTransactions() {
-  const params = new URLSearchParams({ limit:30, offset:0 });
+  const params = new URLSearchParams({ limit:30, offset:0, bank: currentBank });
   if (currentYear)  params.set('year',  currentYear);
   if (currentMonth) params.set('month', currentMonth);
   const data = await fetch(`${API}/api/transactions?${params}`).then(r=>r.json()).catch(()=>null);
@@ -604,11 +651,11 @@ async function loadTransactions() {
 // ── Settings ─────────────────────────────────────────────────────────────────
 async function loadSettings() {
   const s = await fetch(`${API}/api/settings`).then(r => r.json()).catch(() => ({}));
-  initialBalance = s.initial_balance || 0;
+  initialBalanceHSBC = s.initial_balance_hsbc;
 }
 
 document.getElementById('settingsBtn').addEventListener('click', () => {
-  document.getElementById('settingsInitialBalance').value = initialBalance || '';
+  document.getElementById('settingsInitialBalance').value = initialBalanceHSBC !== null ? initialBalanceHSBC : '';
   document.getElementById('settingsModal').classList.add('visible');
 });
 
@@ -621,18 +668,19 @@ document.getElementById('settingsModal').addEventListener('click', e => {
 });
 
 document.getElementById('settingsConfirm').addEventListener('click', async () => {
-  const val = parseFloat(document.getElementById('settingsInitialBalance').value) || 0;
+  const raw = document.getElementById('settingsInitialBalance').value;
+  const val = raw !== '' ? parseFloat(raw) : null;
   const ok = await fetch(`${API}/api/settings`, {
     method: 'PATCH',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({initial_balance: val}),
+    body: JSON.stringify({initial_balance_hsbc: val}),
   }).then(r => r.ok).catch(() => false);
 
   document.getElementById('settingsModal').classList.remove('visible');
   if (ok) {
-    initialBalance = val;
+    initialBalanceHSBC = val;
     showToast('Ajustes guardados', 'ok');
-    await loadSummary();
+    await loadBalance();
   } else {
     showToast('Error al guardar', 'err');
   }
@@ -765,7 +813,7 @@ async function loadCategoryTransactions(category) {
   const body = document.getElementById('catPanelBody');
   body.innerHTML = '<div class="empty"><div class="empty-text" style="color:var(--muted)">Cargando...</div></div>';
 
-  const params = new URLSearchParams({ category, limit: 500, offset: 0 });
+  const params = new URLSearchParams({ category, bank: currentBank, limit: 500, offset: 0 });
   if (currentYear)  params.set('year',  currentYear);
   if (currentMonth) params.set('month', currentMonth);
   const data = await fetch(`${API}/api/transactions?${params}`).then(r => r.json()).catch(() => null);

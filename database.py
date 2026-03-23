@@ -66,7 +66,7 @@ def save_transactions(txs: list) -> tuple[int, int]:
     return new, skipped
 
 # ── Read ──────────────────────────────────────────────────────────────────────
-def _where_clause(year, month, extra: str = "") -> tuple[str, list]:
+def _where_clause(year, month, extra: str = "", bank=None) -> tuple[str, list]:
     conds, params = [], []
     if year:
         conds.append("strftime('%Y', date) = ?")
@@ -74,14 +74,17 @@ def _where_clause(year, month, extra: str = "") -> tuple[str, list]:
     if month:
         conds.append("strftime('%m', date) = ?")
         params.append(f"{month:02d}")
+    if bank:
+        conds.append("bank = ?")
+        params.append(bank)
     if extra:
         conds.append(extra)
     where = ("WHERE " + " AND ".join(conds)) if conds else ""
     return where, params
 
 
-def get_summary(year=None, month=None) -> dict:
-    where, params = _where_clause(year, month)
+def get_summary(year=None, month=None, bank=None) -> dict:
+    where, params = _where_clause(year, month, bank=bank)
     with get_conn() as conn:
         row = conn.execute(f"""
             SELECT
@@ -108,18 +111,20 @@ def get_summary(year=None, month=None) -> dict:
     }
 
 
-def get_monthly_flow(months: int = 6) -> list:
+def get_monthly_flow(months: int = 6, bank=None) -> list:
+    where = "WHERE bank = ?" if bank else ""
+    params = [bank] if bank else []
     with get_conn() as conn:
         rows = conn.execute(f"""
             SELECT
                 strftime('%Y-%m', date) AS month,
                 SUM(CASE WHEN is_debit=0 THEN amount ELSE 0 END) AS income,
                 SUM(CASE WHEN is_debit=1 THEN amount ELSE 0 END) AS expenses
-            FROM transactions
+            FROM transactions {where}
             GROUP BY month
             ORDER BY month DESC
             LIMIT ?
-        """, (months,)).fetchall()
+        """, params + [months]).fetchall()
 
     result = []
     for month, income, expenses in reversed(rows):
@@ -132,8 +137,8 @@ def get_monthly_flow(months: int = 6) -> list:
     return result
 
 
-def get_categories_breakdown(year=None, month=None) -> list:
-    where, params = _where_clause(year, month, "is_debit=1")
+def get_categories_breakdown(year=None, month=None, bank=None) -> list:
+    where, params = _where_clause(year, month, "is_debit=1", bank=bank)
     with get_conn() as conn:
         rows = conn.execute(f"""
             SELECT category, SUM(amount) AS total, COUNT(*) AS count
@@ -193,6 +198,81 @@ def get_transactions(year=None, month=None, category=None, bank=None, limit=50, 
             for r in rows
         ],
     }
+
+
+def get_account_balance(bank: str, year=None, month=None) -> dict:
+    if bank == "Lloyds":
+        return _get_lloyds_balance(year, month)
+    return _get_hsbc_balance(year, month)
+
+
+def _get_lloyds_balance(year=None, month=None) -> dict:
+    """Lee el balance real directamente del campo balance del CSV de Lloyds."""
+    with get_conn() as conn:
+        if year and month:
+            end_row = conn.execute("""
+                SELECT balance FROM transactions
+                WHERE bank='Lloyds' AND strftime('%Y',date)=? AND strftime('%m',date)=?
+                AND balance IS NOT NULL
+                ORDER BY date DESC, id DESC LIMIT 1
+            """, (str(year), f"{month:02d}")).fetchone()
+
+            start_row = conn.execute("""
+                SELECT balance FROM transactions
+                WHERE bank='Lloyds' AND date < ? AND balance IS NOT NULL
+                ORDER BY date DESC, id DESC LIMIT 1
+            """, (f"{year}-{month:02d}-01",)).fetchone()
+        else:
+            end_row = conn.execute("""
+                SELECT balance FROM transactions
+                WHERE bank='Lloyds' AND balance IS NOT NULL
+                ORDER BY date DESC, id DESC LIMIT 1
+            """).fetchone()
+            start_row = None
+
+    return {
+        "current": end_row[0] if end_row else None,
+        "previous": start_row[0] if start_row else None,
+    }
+
+
+def _get_hsbc_balance(year=None, month=None) -> dict:
+    """Calcula el balance de HSBC desde el saldo inicial + movimientos acumulados."""
+    initial_str = get_setting("initial_balance_hsbc")
+    if initial_str is None:
+        return {"current": None, "previous": None}
+
+    initial = float(initial_str)
+
+    with get_conn() as conn:
+        if year and month:
+            period_start = f"{year}-{month:02d}-01"
+
+            net_before = conn.execute("""
+                SELECT COALESCE(SUM(CASE WHEN is_debit=0 THEN amount ELSE -amount END), 0)
+                FROM transactions WHERE bank='HSBC' AND date < ?
+            """, (period_start,)).fetchone()[0]
+
+            net_month = conn.execute("""
+                SELECT COALESCE(SUM(CASE WHEN is_debit=0 THEN amount ELSE -amount END), 0)
+                FROM transactions WHERE bank='HSBC'
+                AND strftime('%Y',date)=? AND strftime('%m',date)=?
+            """, (str(year), f"{month:02d}")).fetchone()[0]
+
+            return {
+                "current":  round(initial + net_before + net_month, 2),
+                "previous": round(initial + net_before, 2),
+            }
+        else:
+            net_total = conn.execute("""
+                SELECT COALESCE(SUM(CASE WHEN is_debit=0 THEN amount ELSE -amount END), 0)
+                FROM transactions WHERE bank='HSBC'
+            """).fetchone()[0]
+
+            return {
+                "current":  round(initial + net_total, 2),
+                "previous": None,
+            }
 
 
 def update_transaction_category(tx_id: int, category: str) -> bool:
