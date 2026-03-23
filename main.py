@@ -102,10 +102,11 @@ def transactions(
     month: Optional[int] = None,
     category: Optional[str] = None,
     bank: Optional[str] = None,
+    is_debit: Optional[bool] = None,
     limit: int = 50,
     offset: int = 0,
 ):
-    return get_transactions(year=year, month=month, category=category, bank=bank, limit=limit, offset=offset)
+    return get_transactions(year=year, month=month, category=category, bank=bank, is_debit=is_debit, limit=limit, offset=offset)
 
 @app.get("/api/balance")
 def balance(

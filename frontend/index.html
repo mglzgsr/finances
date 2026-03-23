@@ -22,6 +22,20 @@
     --income: #4ade80;
     --expense: #f87171;
   }
+  body.light-mode {
+    --bg: #f4f5f7;
+    --surface: #ffffff;
+    --surface2: #eaecf0;
+    --border: #d1d5db;
+    --accent: #7aab0a;
+    --accent2: #4355e8;
+    --danger: #e53935;
+    --text: #111827;
+    --muted: #6b7280;
+    --income: #16a34a;
+    --expense: #dc2626;
+  }
+  body.light-mode::before { opacity: 0.08; }
   * { margin:0; padding:0; box-sizing:border-box; }
   body { background:var(--bg); color:var(--text); font-family:'DM Mono',monospace; min-height:100vh; }
   body::before {
@@ -46,6 +60,13 @@
     color:var(--muted); cursor:pointer; transition:all .2s;
   }
   .bank-btn.active { background:var(--surface2); border-color:var(--accent); color:var(--text); }
+  .theme-btn {
+    background:transparent; border:1px solid var(--border); color:var(--text);
+    font-size:14px; padding:5px 10px; border-radius:8px; cursor:pointer; transition:border-color .2s;
+  }
+  .theme-btn:hover { border-color:var(--accent); }
+  .kpi-clickable { cursor:pointer; }
+  .kpi-clickable:hover { border-color:var(--accent); }
   .period-select {
     background:var(--surface2); border:1px solid var(--border); color:var(--text);
     font-family:'DM Mono',monospace; font-size:11px; padding:6px 12px;
@@ -304,6 +325,7 @@
     <select class="period-select" id="periodSelect">
       <option value="">Todo el histórico</option>
     </select>
+    <button class="theme-btn" id="themeBtn" title="Cambiar tema">🌙</button>
     <button class="settings-btn" id="settingsBtn" title="Ajustes">⚙</button>
     <button class="upload-btn" id="uploadToggle">⬆ Subir CSV</button>
   </div>
@@ -323,8 +345,8 @@
 
   <!-- KPIs -->
   <div class="kpi-row">
-    <div class="kpi-card"><div class="kpi-label">Ingresos</div><div class="kpi-value green" id="kpiIncome">—</div><div class="kpi-delta" id="kpiTxCount"></div></div>
-    <div class="kpi-card"><div class="kpi-label">Gastos</div><div class="kpi-value red" id="kpiExpenses">—</div><div class="kpi-delta" id="kpiExpensesDelta"></div></div>
+    <div class="kpi-card kpi-clickable" id="kpiIncomeCard"><div class="kpi-label">Ingresos ↗</div><div class="kpi-value green" id="kpiIncome">—</div><div class="kpi-delta" id="kpiTxCount"></div></div>
+    <div class="kpi-card kpi-clickable" id="kpiExpensesCard"><div class="kpi-label">Gastos ↗</div><div class="kpi-value red" id="kpiExpenses">—</div><div class="kpi-delta" id="kpiExpensesDelta"></div></div>
     <div class="kpi-card"><div class="kpi-label">Balance periodo</div><div class="kpi-value accent" id="kpiNet">—</div><div class="kpi-delta" id="kpiNetDelta"></div></div>
     <div class="kpi-card"><div class="kpi-label" id="kpiBalanceLabel">Saldo actual</div><div class="kpi-value blue" id="kpiBalance">—</div><div class="kpi-delta" id="kpiBalanceDelta"></div></div>
   </div>
@@ -424,6 +446,30 @@ let currentYear = null, currentMonth = null;
 let currentBank = 'Lloyds';
 let categoryListCache = null;
 let initialBalanceHSBC = null;
+let lastIncome = 0, lastExpenses = 0;
+
+// ── Chart colours (dark / light) ─────────────────────────────────────────────
+const CHART_DARK  = { muted:'#6b7280', grid:'#2a2d35', tipBg:'#1e2027', tipBorder:'#2a2d35', tipTitle:'#e8eaf0' };
+const CHART_LIGHT = { muted:'#9ca3af', grid:'#e5e7eb', tipBg:'#ffffff', tipBorder:'#e2e8f0', tipTitle:'#111827' };
+let CC = CHART_DARK;
+
+// ── Theme toggle ──────────────────────────────────────────────────────────────
+const themeBtn = document.getElementById('themeBtn');
+(function initTheme() {
+  if (localStorage.getItem('theme') === 'light') {
+    document.body.classList.add('light-mode');
+    themeBtn.textContent = '☀️';
+    CC = CHART_LIGHT;
+  }
+})();
+themeBtn.addEventListener('click', () => {
+  const isLight = document.body.classList.toggle('light-mode');
+  themeBtn.textContent = isLight ? '☀️' : '🌙';
+  CC = isLight ? CHART_LIGHT : CHART_DARK;
+  localStorage.setItem('theme', isLight ? 'light' : 'dark');
+  loadFlow();
+  loadCategories();
+});
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = v => '£' + Number(v).toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2});
@@ -490,6 +536,7 @@ async function loadSummary() {
   const d = await fetch(`${API}/api/summary?${params}`).then(r => r.json()).catch(() => null);
   if (!d) return;
 
+  lastIncome = d.income; lastExpenses = d.expenses;
   document.getElementById('kpiIncome').textContent   = fmt(d.income);
   document.getElementById('kpiExpenses').textContent = fmt(d.expenses);
   document.getElementById('kpiNet').textContent      = fmt(d.net);
@@ -547,12 +594,12 @@ async function loadFlow(months = currentMonths) {
     options: {
       responsive:true,
       plugins: {
-        legend:{ labels:{ color:'#6b7280', font:{family:'DM Mono',size:11}, boxWidth:12, padding:14 } },
-        tooltip:{ backgroundColor:'#1e2027', borderColor:'#2a2d35', borderWidth:1, titleColor:'#e8eaf0', bodyColor:'#6b7280', callbacks:{ label: c => ` ${fmtShort(c.parsed.y)}` } }
+        legend:{ labels:{ color:CC.muted, font:{family:'DM Mono',size:11}, boxWidth:12, padding:14 } },
+        tooltip:{ backgroundColor:CC.tipBg, borderColor:CC.tipBorder, borderWidth:1, titleColor:CC.tipTitle, bodyColor:CC.muted, callbacks:{ label: c => ` ${fmtShort(c.parsed.y)}` } }
       },
       scales: {
-        x:{ ticks:{color:'#6b7280', font:{family:'DM Mono',size:11}}, grid:{display:false} },
-        y:{ ticks:{color:'#6b7280', font:{family:'DM Mono',size:10}, callback: v => fmtShort(v)}, grid:{color:'#2a2d35'} }
+        x:{ ticks:{color:CC.muted, font:{family:'DM Mono',size:11}}, grid:{display:false} },
+        y:{ ticks:{color:CC.muted, font:{family:'DM Mono',size:10}, callback: v => fmtShort(v)}, grid:{color:CC.grid} }
       }
     }
   });
@@ -611,8 +658,8 @@ async function loadCategories() {
     type:'doughnut',
     data:{ labels:dLabels, datasets:[{ data:dData, backgroundColor:dColors.map(c=>c+'cc'), borderColor:'#0e0f11', borderWidth:3, hoverOffset:6 }] },
     options:{ responsive:true, cutout:'72%', plugins:{
-      legend:{ position:'right', labels:{ color:'#6b7280', font:{family:'DM Mono',size:10}, boxWidth:8, padding:8 } },
-      tooltip:{ backgroundColor:'#1e2027', borderColor:'#2a2d35', borderWidth:1, titleColor:'#e8eaf0', bodyColor:'#6b7280', callbacks:{ label: c => ` ${fmt(c.parsed)}` } }
+      legend:{ position:'right', labels:{ color:CC.muted, font:{family:'DM Mono',size:10}, boxWidth:8, padding:8 } },
+      tooltip:{ backgroundColor:CC.tipBg, borderColor:CC.tipBorder, borderWidth:1, titleColor:CC.tipTitle, bodyColor:CC.muted, callbacks:{ label: c => ` ${fmt(c.parsed)}` } }
     }}
   });
 }
@@ -787,21 +834,22 @@ async function handleFiles(files) {
   await loadAll();
 }
 
-// ── Category drill-down ───────────────────────────────────────────────────────
-document.getElementById('catList').addEventListener('click', e => {
-  const item = e.target.closest('.cat-drilldown');
-  if (!item) return;
-  openCategoryPanel(item.dataset.cat, parseFloat(item.dataset.total), parseInt(item.dataset.count));
-});
+// ── Transaction panel (genérico: categorías, ingresos, gastos) ────────────────
+function currentPeriodLabel() {
+  if (currentYear && currentMonth) return `${currentYear}-${String(currentMonth).padStart(2,'0')}`;
+  if (currentYear) return String(currentYear);
+  return 'Todo el histórico';
+}
 
-async function openCategoryPanel(category, total, count) {
-  const icon = CAT_ICONS[category] || '📦';
-  document.getElementById('catPanelTitle').textContent = `${icon} ${category}`;
-  document.getElementById('catPanelSubtitle').textContent = `${count} transacciones · ${currentYear ? (currentMonth ? `${currentYear}-${String(currentMonth).padStart(2,'0')}` : currentYear) : 'Todo el histórico'}`;
-  document.getElementById('catPanelTotal').textContent = fmt(total);
+function openTransactionPanel(title, total, totalColor, extraParams) {
+  document.getElementById('catPanelTitle').textContent = title;
+  document.getElementById('catPanelSubtitle').textContent = currentPeriodLabel();
+  const totalEl = document.getElementById('catPanelTotal');
+  totalEl.textContent = total;
+  totalEl.style.color = totalColor;
   document.getElementById('catPanel').classList.add('visible');
   document.body.style.overflow = 'hidden';
-  await loadCategoryTransactions(category);
+  loadPanelTransactions(extraParams);
 }
 
 document.getElementById('catPanelBack').addEventListener('click', () => {
@@ -809,13 +857,15 @@ document.getElementById('catPanelBack').addEventListener('click', () => {
   document.body.style.overflow = '';
 });
 
-async function loadCategoryTransactions(category) {
+async function loadPanelTransactions(extraParams) {
   const body = document.getElementById('catPanelBody');
   body.innerHTML = '<div class="empty"><div class="empty-text" style="color:var(--muted)">Cargando...</div></div>';
 
-  const params = new URLSearchParams({ category, bank: currentBank, limit: 500, offset: 0 });
+  const params = new URLSearchParams({ bank: currentBank, limit: 500, offset: 0 });
   if (currentYear)  params.set('year',  currentYear);
   if (currentMonth) params.set('month', currentMonth);
+  Object.entries(extraParams).forEach(([k,v]) => params.set(k, v));
+
   const data = await fetch(`${API}/api/transactions?${params}`).then(r => r.json()).catch(() => null);
 
   body.innerHTML = '';
@@ -823,22 +873,43 @@ async function loadCategoryTransactions(category) {
     body.innerHTML = '<div class="empty"><div class="empty-icon">📄</div><div class="empty-text">Sin transacciones</div></div>';
     return;
   }
+  document.getElementById('catPanelSubtitle').textContent = `${currentPeriodLabel()} · ${data.total} transacciones`;
+
   data.transactions.forEach(t => {
     const sign = t.is_debit ? '-' : '+';
     const cls  = t.is_debit ? 'expense' : 'income';
+    const icon = CAT_ICONS[t.category] || '📦';
     body.innerHTML += `
       <div class="cat-panel-tx">
         <div class="cat-panel-tx-left">
           <div class="cat-panel-tx-date">${t.date}</div>
           <div>
             <div class="cat-panel-tx-desc">${escapeHtml(t.description)}</div>
-            <div class="cat-panel-tx-meta">${t.bank} · ${t.tx_type}</div>
+            <div class="cat-panel-tx-meta">${icon} ${escapeHtml(t.category)} · ${t.tx_type}</div>
           </div>
         </div>
         <div class="cat-panel-tx-amount ${cls}">${sign}${fmt(t.amount)}</div>
       </div>`;
   });
 }
+
+// Categoría
+document.getElementById('catList').addEventListener('click', e => {
+  const item = e.target.closest('.cat-drilldown');
+  if (!item) return;
+  const icon = CAT_ICONS[item.dataset.cat] || '📦';
+  openTransactionPanel(`${icon} ${item.dataset.cat}`, fmt(parseFloat(item.dataset.total)), 'var(--expense)', { category: item.dataset.cat });
+});
+
+// Ingresos KPI
+document.getElementById('kpiIncomeCard').addEventListener('click', () => {
+  openTransactionPanel('💰 Ingresos', fmt(lastIncome), 'var(--income)', { is_debit: 'false' });
+});
+
+// Gastos KPI
+document.getElementById('kpiExpensesCard').addEventListener('click', () => {
+  openTransactionPanel('💸 Gastos', fmt(lastExpenses), 'var(--expense)', { is_debit: 'true' });
+});
 
 // ── Tab switcher ─────────────────────────────────────────────────────────────
 document.querySelectorAll('.tab').forEach(tab => {

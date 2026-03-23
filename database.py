@@ -160,7 +160,7 @@ def get_categories_breakdown(year=None, month=None, bank=None) -> list:
     ]
 
 
-def get_transactions(year=None, month=None, category=None, bank=None, limit=50, offset=0) -> dict:
+def get_transactions(year=None, month=None, category=None, bank=None, is_debit=None, limit=50, offset=0) -> dict:
     conds, params = [], []
     if year:
         conds.append("strftime('%Y', date) = ?")
@@ -174,6 +174,9 @@ def get_transactions(year=None, month=None, category=None, bank=None, limit=50, 
     if bank:
         conds.append("bank = ?")
         params.append(bank)
+    if is_debit is not None:
+        conds.append("is_debit = ?")
+        params.append(1 if is_debit else 0)
     where = ("WHERE " + " AND ".join(conds)) if conds else ""
 
     with get_conn() as conn:
