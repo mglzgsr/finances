@@ -53,13 +53,13 @@
   @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.8)} }
 
   .header-right { display:flex; align-items:center; gap:16px; }
-  .bank-switcher { display:flex; gap:4px; align-items:center; }
-  .bank-btn {
+  .bank-switcher { display:flex; gap:8px; align-items:center; }
+  .account-select {
     font-family:'DM Mono',monospace; font-size:11px; padding:6px 14px;
-    border-radius:8px; border:1px solid var(--border); background:transparent;
-    color:var(--muted); cursor:pointer; transition:all .2s; display:flex; align-items:center; gap:6px;
+    border-radius:8px; border:1px solid var(--border); background:var(--surface2);
+    color:var(--text); cursor:pointer; transition:all .2s; min-width:160px;
   }
-  .bank-btn.active { background:var(--surface2); border-color:var(--accent); color:var(--text); }
+  .account-select:focus { outline:none; border-color:var(--accent); }
   .conn-dot { width:6px; height:6px; border-radius:50%; background:var(--muted); flex-shrink:0; }
   .conn-dot.connected { background:var(--income); }
 
@@ -340,8 +340,10 @@
   <div class="logo"><div class="logo-dot"></div>FINANCES</div>
   <div class="header-right">
     <div class="bank-switcher">
-      <button class="bank-btn active" data-bank="Lloyds">Lloyds<span class="conn-dot" id="dotLloyds"></span></button>
-      <button class="bank-btn" data-bank="HSBC">HSBC<span class="conn-dot" id="dotHSBC"></span></button>
+      <select id="accountSelect" class="account-select">
+        <option value="">Cargando...</option>
+      </select>
+      <span class="conn-dot" id="connDot"></span>
     </div>
     <select class="period-select" id="periodSelect">
       <option value="">Todo el histórico</option>
@@ -473,9 +475,10 @@
 const API = '';  // mismo origen — FastAPI sirve el HTML
 let flowChart = null, donutChart = null;
 let currentYear = null, currentMonth = null;
-let currentBank = 'Lloyds';
+let currentAccount = '';
+let currentAccountMeta = null;
+let accountsCache = [];
 let categoryListCache = null;
-let initialBalanceHSBC = null;
 let lastIncome = 0, lastExpenses = 0;
 
 // ── Chart colours (dark / light) ─────────────────────────────────────────────
@@ -521,7 +524,7 @@ function parsePeriod(val) {
 
 // ── Period selector ──────────────────────────────────────────────────────────
 async function populatePeriods() {
-  const data = await fetch(`${API}/api/monthly-flow?months=36&bank=${currentBank}`).then(r => r.json()).catch(() => []);
+  const data = await fetch(`${API}/api/monthly-flow?months=36&bank=${currentAccount}`).then(r => r.json()).catch(() => []);
   const sel = document.getElementById('periodSelect');
   sel.innerHTML = '<option value="">Todo el histórico</option>';
   data.forEach(d => {
@@ -540,17 +543,43 @@ document.getElementById('periodSelect').addEventListener('change', e => {
   loadAll();
 });
 
+// ── Accounts ─────────────────────────────────────────────────────────────────
+async function loadAccounts() {
+  accountsCache = await fetch(`${API}/api/accounts`).then(r => r.json()).catch(() => []);
+  const sel = document.getElementById('accountSelect');
+  sel.innerHTML = '';
+  accountsCache.forEach(a => {
+    const opt = document.createElement('option');
+    opt.value = a.slug;
+    opt.textContent = a.display_name + (a.currency !== 'GBP' ? ` (${a.currency})` : '');
+    sel.appendChild(opt);
+  });
+  if (accountsCache.length) {
+    currentAccount = accountsCache[0].slug;
+    currentAccountMeta = accountsCache[0];
+  }
+  await loadConnections();
+  await Promise.all([populatePeriods(), loadAll()]);
+}
+
+document.getElementById('accountSelect').addEventListener('change', async e => {
+  currentAccount = e.target.value;
+  currentAccountMeta = accountsCache.find(a => a.slug === currentAccount) || null;
+  currentYear = null;
+  currentMonth = null;
+  document.getElementById('periodSelect').value = '';
+  updateSyncBar();
+  await Promise.all([populatePeriods(), loadAll()]);
+});
+
 // ── Open Banking connections ──────────────────────────────────────────────────
 let connectionsCache = {};
 
 async function loadConnections() {
   const data = await fetch(`${API}/api/connections`).then(r => r.json()).catch(() => ({}));
   connectionsCache = data;
-
-  for (const bank of ['Lloyds', 'HSBC']) {
-    const dot = document.getElementById(`dot${bank}`);
-    if (dot) dot.classList.toggle('connected', !!data[bank]);
-  }
+  const connected = currentAccountMeta && !!data[currentAccountMeta.connection_id];
+  document.getElementById('connDot').classList.toggle('connected', connected);
   updateSyncBar();
 }
 
@@ -559,34 +588,41 @@ function updateSyncBar() {
   const statusEl   = document.getElementById('syncStatus');
   const syncBtn    = document.getElementById('syncBtn');
   const connectBtn = document.getElementById('connectBtn');
-  const conn       = connectionsCache[currentBank];
+  const connId     = currentAccountMeta?.connection_id;
+  const conn       = connId ? connectionsCache[connId] : null;
+  const isManual   = currentAccountMeta?.source === 'manual' || currentAccountMeta?.source === 'csv';
 
   bar.classList.add('visible');
 
-  if (conn) {
+  if (isManual) {
+    statusEl.textContent = `${currentAccountMeta?.display_name || ''} · cuenta manual`;
+    syncBtn.style.display    = 'none';
+    connectBtn.style.display = 'none';
+  } else if (conn) {
     const lastSync = conn.last_sync
       ? new Date(conn.last_sync).toLocaleString('es', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})
       : 'nunca';
-    statusEl.textContent = `${currentBank} conectado · última sync: ${lastSync}`;
-    syncBtn.style.display   = '';
+    statusEl.textContent = `${currentAccountMeta?.display_name || ''} conectado · última sync: ${lastSync}`;
+    syncBtn.style.display    = '';
     connectBtn.style.display = 'none';
   } else {
-    statusEl.textContent = `${currentBank} no conectado vía Open Banking`;
-    syncBtn.style.display   = 'none';
+    statusEl.textContent = `${currentAccountMeta?.display_name || ''} no conectado vía Open Banking`;
+    syncBtn.style.display    = 'none';
     connectBtn.style.display = '';
   }
 }
 
 document.getElementById('connectBtn').addEventListener('click', () => {
-  window.location.href = `${API}/connect?bank=${currentBank}`;
+  const connId = currentAccountMeta?.connection_id || currentAccount;
+  window.location.href = `${API}/connect?bank=${connId}`;
 });
 
 document.getElementById('syncBtn').addEventListener('click', async () => {
   const btn = document.getElementById('syncBtn');
   btn.disabled = true;
   btn.textContent = '↻ Sincronizando...';
-
-  const res = await fetch(`${API}/api/sync?bank=${currentBank}`, { method: 'POST' })
+  const connId = currentAccountMeta?.connection_id || currentAccount;
+  const res = await fetch(`${API}/api/sync?bank=${connId}`, { method: 'POST' })
     .then(r => r.json()).catch(() => null);
 
   btn.disabled = false;
@@ -601,19 +637,6 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
   }
 });
 
-// ── Bank switcher ─────────────────────────────────────────────────────────────
-document.querySelectorAll('.bank-btn').forEach(btn => {
-  btn.addEventListener('click', async () => {
-    document.querySelectorAll('.bank-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    currentBank = btn.dataset.bank;
-    currentYear = null;
-    currentMonth = null;
-    document.getElementById('periodSelect').value = '';
-    updateSyncBar();
-    await Promise.all([populatePeriods(), loadAll()]);
-  });
-});
 
 // ── Load all data ─────────────────────────────────────────────────────────────
 async function loadAll() {
@@ -622,7 +645,7 @@ async function loadAll() {
 
 // ── Summary ──────────────────────────────────────────────────────────────────
 async function loadSummary() {
-  const params = new URLSearchParams({ bank: currentBank });
+  const params = new URLSearchParams({ bank: currentAccount });
   if (currentYear)  params.set('year',  currentYear);
   if (currentMonth) params.set('month', currentMonth);
   const d = await fetch(`${API}/api/summary?${params}`).then(r => r.json()).catch(() => null);
@@ -640,7 +663,7 @@ async function loadSummary() {
 
 // ── Balance real ──────────────────────────────────────────────────────────────
 async function loadBalance() {
-  const params = new URLSearchParams({ bank: currentBank });
+  const params = new URLSearchParams({ bank: currentAccount });
   if (currentYear)  params.set('year',  currentYear);
   if (currentMonth) params.set('month', currentMonth);
   const b = await fetch(`${API}/api/balance?${params}`).then(r => r.json()).catch(() => null);
@@ -651,7 +674,7 @@ async function loadBalance() {
   if (!b || b.current === null || b.current === undefined) {
     document.getElementById('kpiBalance').textContent = '—';
     document.getElementById('kpiBalanceDelta').textContent =
-      currentBank === 'HSBC' ? 'Configura en ⚙ ajustes' : '';
+      currentAccountMeta?.source === 'manual' ? 'Configura en ⚙ ajustes' : '';
     return;
   }
 
@@ -664,7 +687,7 @@ async function loadBalance() {
 let currentMonths = 6;
 async function loadFlow(months = currentMonths) {
   currentMonths = months;
-  const data = await fetch(`${API}/api/monthly-flow?months=${months}&bank=${currentBank}`).then(r => r.json()).catch(() => []);
+  const data = await fetch(`${API}/api/monthly-flow?months=${months}&bank=${currentAccount}`).then(r => r.json()).catch(() => []);
 
   const labels   = data.map(d => { const [y,m] = d.month.split('-'); return new Date(y,m-1).toLocaleDateString('es',{month:'short'}); });
   const income   = data.map(d => d.income);
@@ -709,7 +732,7 @@ const CAT_ICONS = {
 const CAT_COLORS = ['#5b6cff','#4ade80','#f87171','#fbbf24','#c084fc','#38bdf8','#c8f135','#fb923c','#f472b6','#34d399'];
 
 async function loadCategories() {
-  const params = new URLSearchParams({ bank: currentBank });
+  const params = new URLSearchParams({ bank: currentAccount });
   if (currentYear)  params.set('year',  currentYear);
   if (currentMonth) params.set('month', currentMonth);
   const cats = await fetch(`${API}/api/categories?${params}`).then(r=>r.json()).catch(()=>[]);
@@ -758,7 +781,7 @@ async function loadCategories() {
 
 // ── Transactions ─────────────────────────────────────────────────────────────
 async function loadTransactions() {
-  const params = new URLSearchParams({ limit:30, offset:0, bank: currentBank });
+  const params = new URLSearchParams({ limit:30, offset:0, bank: currentAccount });
   if (currentYear)  params.set('year',  currentYear);
   if (currentMonth) params.set('month', currentMonth);
   const data = await fetch(`${API}/api/transactions?${params}`).then(r=>r.json()).catch(()=>null);
@@ -953,7 +976,7 @@ async function loadPanelTransactions(extraParams) {
   const body = document.getElementById('catPanelBody');
   body.innerHTML = '<div class="empty"><div class="empty-text" style="color:var(--muted)">Cargando...</div></div>';
 
-  const params = new URLSearchParams({ bank: currentBank, limit: 500, offset: 0 });
+  const params = new URLSearchParams({ bank: currentAccount, limit: 500, offset: 0 });
   if (currentYear)  params.set('year',  currentYear);
   if (currentMonth) params.set('month', currentMonth);
   Object.entries(extraParams).forEach(([k,v]) => params.set(k, v));
@@ -1020,7 +1043,7 @@ if ('serviceWorker' in navigator) {
 // ── Init ─────────────────────────────────────────────────────────────────────
 (async () => {
   await loadSettings();
-  await Promise.all([populatePeriods(), loadAll(), loadConnections()]);
+  await loadAccounts();
 })();
 </script>
 </body>
