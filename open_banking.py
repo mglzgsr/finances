@@ -88,6 +88,19 @@ def fetch_accounts(access_token: str) -> list:
     return resp.json().get("results", [])
 
 
+def fetch_balance(access_token: str, account_id: str) -> float | None:
+    """Devuelve el saldo actual de una cuenta según TrueLayer."""
+    resp = httpx.get(
+        f"{API_URL}/data/v1/accounts/{account_id}/balance",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=15,
+    )
+    if not resp.is_success:
+        return None
+    results = resp.json().get("results", [])
+    return float(results[0]["current"]) if results else None
+
+
 def fetch_transactions(access_token: str, account_id: str, from_date: str = None) -> list:
     """Devuelve transacciones de una cuenta. from_date en formato ISO 8601."""
     params = {}

@@ -48,14 +48,19 @@ def init_db():
         """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS bank_connections (
-                bank          TEXT PRIMARY KEY,
-                access_token  TEXT NOT NULL,
-                refresh_token TEXT NOT NULL,
-                expires_at    TEXT NOT NULL,
-                connected_at  TEXT NOT NULL,
-                last_sync     TEXT
+                bank            TEXT PRIMARY KEY,
+                access_token    TEXT NOT NULL,
+                refresh_token   TEXT NOT NULL,
+                expires_at      TEXT NOT NULL,
+                connected_at    TEXT NOT NULL,
+                last_sync       TEXT,
+                current_balance REAL
             )
         """)
+        try:
+            conn.execute("ALTER TABLE bank_connections ADD COLUMN current_balance REAL")
+        except Exception:
+            pass
 
 def get_conn():
     return sqlite3.connect(DB_PATH)
@@ -375,7 +380,7 @@ def save_connection(bank: str, access_token: str, refresh_token: str, expires_in
 def get_connection(bank: str) -> dict | None:
     with get_conn() as conn:
         row = conn.execute("""
-            SELECT bank, access_token, refresh_token, expires_at, connected_at, last_sync
+            SELECT bank, access_token, refresh_token, expires_at, connected_at, last_sync, current_balance
             FROM bank_connections WHERE bank = ?
         """, (bank,)).fetchone()
     if not row:
@@ -383,6 +388,7 @@ def get_connection(bank: str) -> dict | None:
     return {
         "bank": row[0], "access_token": row[1], "refresh_token": row[2],
         "expires_at": row[3], "connected_at": row[4], "last_sync": row[5],
+        "current_balance": row[6],
     }
 
 
@@ -399,6 +405,14 @@ def update_sync_time(bank: str):
         conn.execute(
             "UPDATE bank_connections SET last_sync = ? WHERE bank = ?",
             (datetime.utcnow().isoformat(), bank)
+        )
+
+
+def update_current_balance(bank: str, balance: float):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE bank_connections SET current_balance = ? WHERE bank = ?",
+            (balance, bank)
         )
 
 

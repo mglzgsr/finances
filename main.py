@@ -24,6 +24,7 @@ from database import (
     get_monthly_flow, get_categories_breakdown, update_transaction_category,
     get_all_categories, get_setting, set_setting, get_account_balance,
     save_connection, get_connection, get_all_connections, update_sync_time,
+    update_current_balance,
 )
 from parsers import detect_bank, parse_lloyds, parse_hsbc, CATEGORY_RULES
 import open_banking as ob
@@ -120,6 +121,11 @@ def balance(
     year: Optional[int] = None,
     month: Optional[int] = None,
 ):
+    # Para saldo actual (sin filtro de mes), usar el balance directo de TrueLayer si está disponible
+    if not year and not month:
+        conn_data = get_connection(bank)
+        if conn_data and conn_data.get("current_balance") is not None:
+            return {"current": conn_data["current_balance"], "previous": None}
     return get_account_balance(bank=bank, year=year, month=month)
 
 
@@ -183,14 +189,20 @@ def sync(bank: str):
     accounts = ob.fetch_accounts(access_token)
     total_new = total_skipped = 0
 
+    total_balance = 0.0
     for account in accounts:
         txs_raw = ob.fetch_transactions(access_token, account["account_id"], from_date)
         txs = [ob.to_internal_tx(t, bank) for t in txs_raw]
         new, skipped = save_transactions(txs)
         total_new += new
         total_skipped += skipped
+        bal = ob.fetch_balance(access_token, account["account_id"])
+        if bal is not None:
+            total_balance += bal
 
     update_sync_time(bank)
+    if total_balance:
+        update_current_balance(bank, round(total_balance, 2))
     return {"bank": bank, "new": total_new, "skipped": total_skipped}
 
 
