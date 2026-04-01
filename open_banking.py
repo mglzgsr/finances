@@ -124,6 +124,71 @@ def account_to_internal(tl_account: dict, connection_id: str, sort_order: int = 
     }
 
 
+def fetch_cards(access_token: str) -> list:
+    """Devuelve la lista de tarjetas de crédito del usuario."""
+    resp = httpx.get(
+        f"{API_URL}/data/v1/cards",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=15,
+    )
+    if not resp.is_success:
+        return []
+    return resp.json().get("results", [])
+
+
+def fetch_card_balance(access_token: str, account_id: str) -> float | None:
+    """Devuelve el saldo actual de una tarjeta de crédito."""
+    resp = httpx.get(
+        f"{API_URL}/data/v1/cards/{account_id}/balance",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=15,
+    )
+    if not resp.is_success:
+        return None
+    results = resp.json().get("results", [])
+    if not results:
+        return None
+    r = results[0]
+    # Para crédito: current = deuda pendiente
+    return float(r.get("current", 0))
+
+
+def fetch_card_transactions(access_token: str, account_id: str, from_date: str = None) -> list:
+    """Devuelve transacciones de una tarjeta de crédito."""
+    params = {}
+    if from_date:
+        params["from"] = from_date
+    resp = httpx.get(
+        f"{API_URL}/data/v1/cards/{account_id}/transactions",
+        headers={"Authorization": f"Bearer {access_token}"},
+        params=params,
+        timeout=30,
+    )
+    if not resp.is_success:
+        return []
+    return resp.json().get("results", [])
+
+
+def card_to_internal(tl_card: dict, connection_id: str, sort_order: int = 0) -> dict:
+    """Convierte una tarjeta de TrueLayer al formato interno para la tabla accounts."""
+    display  = tl_card.get("display_name", tl_card["account_id"])
+    currency = tl_card.get("currency", "GBP")
+    raw_slug = f"{connection_id}-{display}-{currency}".lower()
+    slug     = "".join(c if c.isalnum() else "-" for c in raw_slug).strip("-")
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    return {
+        "slug":                 slug,
+        "display_name":         f"{connection_id} · {display}",
+        "account_type":         "credit",
+        "currency":             currency,
+        "source":               "truelayer",
+        "connection_id":        connection_id,
+        "truelayer_account_id": tl_card["account_id"],
+        "sort_order":           sort_order,
+    }
+
+
 def fetch_balance(access_token: str, account_id: str) -> float | None:
     """Devuelve el saldo actual de una cuenta según TrueLayer."""
     resp = httpx.get(
