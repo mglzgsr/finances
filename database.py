@@ -18,6 +18,22 @@ def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     with get_conn() as conn:
         conn.execute("""
+            CREATE TABLE IF NOT EXISTS accounts (
+                id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+                slug                 TEXT NOT NULL UNIQUE,
+                display_name         TEXT NOT NULL,
+                account_type         TEXT NOT NULL DEFAULT 'current',
+                currency             TEXT NOT NULL DEFAULT 'GBP',
+                source               TEXT NOT NULL DEFAULT 'truelayer',
+                connection_id        TEXT,
+                truelayer_account_id TEXT,
+                current_balance      REAL,
+                last_sync            TEXT,
+                is_active            INTEGER NOT NULL DEFAULT 1,
+                sort_order           INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS transactions (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 date        TEXT NOT NULL,
@@ -29,17 +45,22 @@ def init_db():
                 category    TEXT NOT NULL,
                 bank        TEXT NOT NULL,
                 hash        TEXT NOT NULL UNIQUE,
-                timestamp   TEXT
+                timestamp   TEXT,
+                account_id  INTEGER REFERENCES accounts(id)
             )
         """)
-        # Migration: add timestamp column if it doesn't exist yet
         try:
             conn.execute("ALTER TABLE transactions ADD COLUMN timestamp TEXT")
         except Exception:
             pass
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_date     ON transactions(date)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_category ON transactions(category)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_bank     ON transactions(bank)")
+        try:
+            conn.execute("ALTER TABLE transactions ADD COLUMN account_id INTEGER REFERENCES accounts(id)")
+        except Exception:
+            pass
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_date       ON transactions(date)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_category   ON transactions(category)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_bank       ON transactions(bank)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_account_id ON transactions(account_id)")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS settings (
                 key   TEXT PRIMARY KEY,
@@ -413,6 +434,76 @@ def update_current_balance(bank: str, balance: float):
         conn.execute(
             "UPDATE bank_connections SET current_balance = ? WHERE bank = ?",
             (balance, bank)
+        )
+
+
+# ── Accounts ──────────────────────────────────────────────────────────────────
+def get_all_accounts() -> list:
+    with get_conn() as conn:
+        rows = conn.execute("""
+            SELECT id, slug, display_name, account_type, currency, source,
+                   connection_id, truelayer_account_id, current_balance, last_sync,
+                   is_active, sort_order
+            FROM accounts
+            WHERE is_active = 1
+            ORDER BY sort_order, id
+        """).fetchall()
+    return [
+        {
+            "id": r[0], "slug": r[1], "display_name": r[2], "account_type": r[3],
+            "currency": r[4], "source": r[5], "connection_id": r[6],
+            "truelayer_account_id": r[7], "current_balance": r[8],
+            "last_sync": r[9], "is_active": bool(r[10]), "sort_order": r[11],
+        }
+        for r in rows
+    ]
+
+
+def get_account(slug: str) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute("""
+            SELECT id, slug, display_name, account_type, currency, source,
+                   connection_id, truelayer_account_id, current_balance, last_sync,
+                   is_active, sort_order
+            FROM accounts WHERE slug = ?
+        """, (slug,)).fetchone()
+    if not row:
+        return None
+    return {
+        "id": row[0], "slug": row[1], "display_name": row[2], "account_type": row[3],
+        "currency": row[4], "source": row[5], "connection_id": row[6],
+        "truelayer_account_id": row[7], "current_balance": row[8],
+        "last_sync": row[9], "is_active": bool(row[10]), "sort_order": row[11],
+    }
+
+
+def create_account(slug: str, display_name: str, account_type: str = "current",
+                   currency: str = "GBP", source: str = "manual",
+                   connection_id: str = None, truelayer_account_id: str = None,
+                   sort_order: int = 0) -> int:
+    with get_conn() as conn:
+        cur = conn.execute("""
+            INSERT INTO accounts
+                (slug, display_name, account_type, currency, source, connection_id,
+                 truelayer_account_id, sort_order)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(slug) DO UPDATE SET
+                display_name=excluded.display_name,
+                account_type=excluded.account_type,
+                currency=excluded.currency,
+                source=excluded.source,
+                connection_id=excluded.connection_id,
+                truelayer_account_id=excluded.truelayer_account_id
+        """, (slug, display_name, account_type, currency, source,
+              connection_id, truelayer_account_id, sort_order))
+        return cur.lastrowid
+
+
+def update_account_balance(slug: str, balance: float):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE accounts SET current_balance = ?, last_sync = ? WHERE slug = ?",
+            (balance, datetime.utcnow().isoformat(), slug)
         )
 
 

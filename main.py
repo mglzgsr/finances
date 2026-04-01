@@ -24,7 +24,8 @@ from database import (
     get_monthly_flow, get_categories_breakdown, update_transaction_category,
     get_all_categories, get_setting, set_setting, get_account_balance,
     save_connection, get_connection, get_all_connections, update_sync_time,
-    update_current_balance,
+    update_current_balance, get_all_accounts, get_account, create_account,
+    update_account_balance,
 )
 from parsers import detect_bank, parse_lloyds, parse_hsbc, CATEGORY_RULES
 import open_banking as ob
@@ -144,6 +145,34 @@ def category_list():
     db_cats = get_all_categories()
     all_cats = sorted(set(list(CATEGORY_RULES.keys()) + db_cats + ["Otros"]))
     return all_cats
+
+
+# ── Accounts ─────────────────────────────────────────────────────────────────
+class AccountCreate(BaseModel):
+    slug: str
+    display_name: str
+    account_type: str = "current"
+    currency: str = "GBP"
+    source: str = "manual"
+    connection_id: Optional[str] = None
+    sort_order: int = 0
+
+@app.get("/api/accounts")
+def accounts_list():
+    return get_all_accounts()
+
+@app.post("/api/accounts")
+def accounts_create(body: AccountCreate):
+    create_account(
+        slug=body.slug,
+        display_name=body.display_name,
+        account_type=body.account_type,
+        currency=body.currency,
+        source=body.source,
+        connection_id=body.connection_id,
+        sort_order=body.sort_order,
+    )
+    return get_account(body.slug)
 
 
 # ── Open Banking ─────────────────────────────────────────────────────────────
