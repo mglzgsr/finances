@@ -25,7 +25,7 @@ REDIRECT_URI  = os.getenv("TRUELAYER_REDIRECT_URI", "https://finances.mglzgsr.co
 
 print(f"[TrueLayer] sandbox={SANDBOX} client_id={'SET' if CLIENT_ID else 'MISSING'} secret={'SET' if CLIENT_SECRET else 'MISSING'}")
 
-SCOPES = "accounts transactions balance offline_access"
+SCOPES = "accounts transactions balance cards offline_access"
 
 
 def get_auth_url(state: str) -> str:
