@@ -129,4 +129,5 @@ def to_internal_tx(tx: dict, bank: str) -> dict:
         "category":    categorize(desc),
         "bank":        bank,
         "hash":        hash_val,
+        "timestamp":   timestamp,
     }

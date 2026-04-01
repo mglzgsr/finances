@@ -28,9 +28,15 @@ def init_db():
                 balance     REAL,
                 category    TEXT NOT NULL,
                 bank        TEXT NOT NULL,
-                hash        TEXT NOT NULL UNIQUE
+                hash        TEXT NOT NULL UNIQUE,
+                timestamp   TEXT
             )
         """)
+        # Migration: add timestamp column if it doesn't exist yet
+        try:
+            conn.execute("ALTER TABLE transactions ADD COLUMN timestamp TEXT")
+        except Exception:
+            pass
         conn.execute("CREATE INDEX IF NOT EXISTS idx_date     ON transactions(date)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_category ON transactions(category)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_bank     ON transactions(bank)")
@@ -74,13 +80,14 @@ def save_transactions(txs: list) -> tuple[int, int]:
             try:
                 conn.execute("""
                     INSERT INTO transactions
-                        (date, description, tx_type, is_debit, amount, balance, category, bank, hash)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        (date, description, tx_type, is_debit, amount, balance, category, bank, hash, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     tx["date"], tx["description"], tx["tx_type"],
                     1 if tx["is_debit"] else 0,
                     tx["amount"], tx["balance"],
                     tx["category"], tx["bank"], tx["hash"],
+                    tx.get("timestamp"),
                 ))
                 new += 1
             except sqlite3.IntegrityError:
@@ -239,19 +246,19 @@ def _get_lloyds_balance(year=None, month=None) -> dict:
                 SELECT balance FROM transactions
                 WHERE bank='Lloyds' AND strftime('%Y',date)=? AND strftime('%m',date)=?
                 AND balance IS NOT NULL
-                ORDER BY date DESC, id DESC LIMIT 1
+                ORDER BY date DESC, timestamp DESC NULLS LAST, id DESC LIMIT 1
             """, (str(year), f"{month:02d}")).fetchone()
 
             start_row = conn.execute("""
                 SELECT balance FROM transactions
                 WHERE bank='Lloyds' AND date < ? AND balance IS NOT NULL
-                ORDER BY date DESC, id DESC LIMIT 1
+                ORDER BY date DESC, timestamp DESC NULLS LAST, id DESC LIMIT 1
             """, (f"{year}-{month:02d}-01",)).fetchone()
         else:
             end_row = conn.execute("""
                 SELECT balance FROM transactions
                 WHERE bank='Lloyds' AND balance IS NOT NULL
-                ORDER BY date DESC, id DESC LIMIT 1
+                ORDER BY date DESC, timestamp DESC NULLS LAST, id DESC LIMIT 1
             """).fetchone()
             start_row = None
 
@@ -262,7 +269,39 @@ def _get_lloyds_balance(year=None, month=None) -> dict:
 
 
 def _get_hsbc_balance(year=None, month=None) -> dict:
-    """Calcula el balance de HSBC desde el saldo inicial + movimientos acumulados."""
+    """Balance HSBC: usa running_balance de TrueLayer si está disponible, si no calcula desde saldo inicial."""
+    with get_conn() as conn:
+        if year and month:
+            # Intenta leer running_balance de TrueLayer para el mes
+            end_row = conn.execute("""
+                SELECT balance FROM transactions
+                WHERE bank='HSBC' AND strftime('%Y',date)=? AND strftime('%m',date)=?
+                AND balance IS NOT NULL
+                ORDER BY date DESC, timestamp DESC NULLS LAST, id DESC LIMIT 1
+            """, (str(year), f"{month:02d}")).fetchone()
+
+            start_row = conn.execute("""
+                SELECT balance FROM transactions
+                WHERE bank='HSBC' AND date < ? AND balance IS NOT NULL
+                ORDER BY date DESC, timestamp DESC NULLS LAST, id DESC LIMIT 1
+            """, (f"{year}-{month:02d}-01",)).fetchone()
+
+            if end_row:
+                return {
+                    "current":  end_row[0],
+                    "previous": start_row[0] if start_row else None,
+                }
+        else:
+            end_row = conn.execute("""
+                SELECT balance FROM transactions
+                WHERE bank='HSBC' AND balance IS NOT NULL
+                ORDER BY date DESC, timestamp DESC NULLS LAST, id DESC LIMIT 1
+            """).fetchone()
+
+            if end_row:
+                return {"current": end_row[0], "previous": None}
+
+    # Fallback: calcula desde saldo inicial + movimientos acumulados
     initial_str = get_setting("initial_balance_hsbc")
     if initial_str is None:
         return {"current": None, "previous": None}
