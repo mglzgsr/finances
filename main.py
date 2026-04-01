@@ -122,11 +122,11 @@ def balance(
     year: Optional[int] = None,
     month: Optional[int] = None,
 ):
-    # Para saldo actual (sin filtro de mes), usar el balance directo de TrueLayer si está disponible
+    # Para saldo actual, usar el balance guardado en accounts si está disponible
     if not year and not month:
-        conn_data = get_connection(bank)
-        if conn_data and conn_data.get("current_balance") is not None:
-            return {"current": conn_data["current_balance"], "previous": None}
+        acc = get_account(bank)
+        if acc and acc.get("current_balance") is not None:
+            return {"current": acc["current_balance"], "previous": None}
     return get_account_balance(bank=bank, year=year, month=month)
 
 
