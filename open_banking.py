@@ -98,7 +98,10 @@ def fetch_balance(access_token: str, account_id: str) -> float | None:
     if not resp.is_success:
         return None
     results = resp.json().get("results", [])
-    return float(results[0]["current"]) if results else None
+    if not results:
+        return None
+    r = results[0]
+    return float(r.get("available", r["current"]))
 
 
 def fetch_transactions(access_token: str, account_id: str, from_date: str = None) -> list:
