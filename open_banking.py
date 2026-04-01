@@ -78,13 +78,14 @@ def refresh_access_token(refresh_token: str) -> dict:
 
 
 def fetch_accounts(access_token: str) -> list:
-    """Devuelve la lista de cuentas del usuario."""
+    """Devuelve la lista de cuentas del usuario. Devuelve [] si el proveedor no soporta cuentas."""
     resp = httpx.get(
         f"{API_URL}/data/v1/accounts",
         headers={"Authorization": f"Bearer {access_token}"},
         timeout=15,
     )
-    resp.raise_for_status()
+    if not resp.is_success:
+        return []
     return resp.json().get("results", [])
 
 
