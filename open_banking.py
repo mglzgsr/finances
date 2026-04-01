@@ -47,6 +47,8 @@ def exchange_code(code: str) -> dict:
         "code": code,
         "redirect_uri": REDIRECT_URI,
     })
+    if not resp.is_success:
+        print(f"[TrueLayer] token exchange error {resp.status_code}: {resp.text}")
     resp.raise_for_status()
     return resp.json()
 
