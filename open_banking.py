@@ -7,17 +7,23 @@ import os
 import hashlib
 from urllib.parse import urlencode
 from datetime import datetime, timedelta
+from pathlib import Path
 
+from dotenv import load_dotenv
 import httpx
 from parsers import categorize
 
-SANDBOX = os.getenv("TRUELAYER_SANDBOX", "true").lower() == "true"
+# Carga el .env explícitamente desde el directorio del proyecto
+load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
-AUTH_URL     = "https://auth.truelayer-sandbox.com" if SANDBOX else "https://auth.truelayer.com"
-API_URL      = "https://api.truelayer-sandbox.com"  if SANDBOX else "https://api.truelayer.com"
-CLIENT_ID    = os.getenv("TRUELAYER_CLIENT_ID")
+SANDBOX       = os.getenv("TRUELAYER_SANDBOX", "true").lower() == "true"
+AUTH_URL      = "https://auth.truelayer-sandbox.com" if SANDBOX else "https://auth.truelayer.com"
+API_URL       = "https://api.truelayer-sandbox.com"  if SANDBOX else "https://api.truelayer.com"
+CLIENT_ID     = os.getenv("TRUELAYER_CLIENT_ID")
 CLIENT_SECRET = os.getenv("TRUELAYER_CLIENT_SECRET")
-REDIRECT_URI = os.getenv("TRUELAYER_REDIRECT_URI", "https://finances.mglzgsr.com/callback")
+REDIRECT_URI  = os.getenv("TRUELAYER_REDIRECT_URI", "https://finances.mglzgsr.com/callback")
+
+print(f"[TrueLayer] sandbox={SANDBOX} client_id={'SET' if CLIENT_ID else 'MISSING'} secret={'SET' if CLIENT_SECRET else 'MISSING'}")
 
 SCOPES = "accounts transactions balance offline_access"
 
