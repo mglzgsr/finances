@@ -30,8 +30,11 @@ def get_auth_url(state: str) -> str:
         "scope": SCOPES,
         "redirect_uri": REDIRECT_URI,
         "state": state,
-        "providers": "uk-ob-all uk-oauth-all",
     }
+    if SANDBOX:
+        params["providers"] = "mock"
+    else:
+        params["providers"] = "uk-ob-all uk-oauth-all"
     return f"{AUTH_URL}/?{urlencode(params)}"
 
 
