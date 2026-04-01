@@ -114,7 +114,7 @@ def account_to_internal(tl_account: dict, connection_id: str, sort_order: int = 
 
     return {
         "slug":                 slug,
-        "display_name":         f"{connection_id} · {display}" if currency != "GBP" else display,
+        "display_name":         f"{connection_id} · {display}",
         "account_type":         acc_type,
         "currency":             currency,
         "source":               "truelayer",
