@@ -59,6 +59,18 @@ def save_transactions(txs: list) -> tuple[int, int]:
     new = skipped = 0
     with get_conn() as conn:
         for tx in txs:
+            # Soft-dedup: skip if same date+description+amount+bank already exists
+            existing = conn.execute("""
+                SELECT 1 FROM transactions
+                WHERE date=? AND description=? AND amount=? AND bank=? AND is_debit=?
+                LIMIT 1
+            """, (
+                tx["date"], tx["description"], tx["amount"],
+                tx["bank"], 1 if tx["is_debit"] else 0,
+            )).fetchone()
+            if existing:
+                skipped += 1
+                continue
             try:
                 conn.execute("""
                     INSERT INTO transactions
