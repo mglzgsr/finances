@@ -6,7 +6,7 @@ Usa sqlite3 estándar, sin dependencias extra.
 import sqlite3
 import os
 from pathlib import Path
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Optional
 from collections import defaultdict
 
@@ -38,6 +38,16 @@ def init_db():
             CREATE TABLE IF NOT EXISTS settings (
                 key   TEXT PRIMARY KEY,
                 value TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS bank_connections (
+                bank          TEXT PRIMARY KEY,
+                access_token  TEXT NOT NULL,
+                refresh_token TEXT NOT NULL,
+                expires_at    TEXT NOT NULL,
+                connected_at  TEXT NOT NULL,
+                last_sync     TEXT
             )
         """)
 
@@ -293,6 +303,52 @@ def get_all_categories() -> list:
             "SELECT DISTINCT category FROM transactions ORDER BY category"
         ).fetchall()
     return [r[0] for r in rows]
+
+
+# ── Bank connections ──────────────────────────────────────────────────────────
+def save_connection(bank: str, access_token: str, refresh_token: str, expires_in: int):
+    expires_at   = (datetime.utcnow() + timedelta(seconds=expires_in)).isoformat()
+    connected_at = datetime.utcnow().isoformat()
+    with get_conn() as conn:
+        conn.execute("""
+            INSERT INTO bank_connections (bank, access_token, refresh_token, expires_at, connected_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(bank) DO UPDATE SET
+                access_token=excluded.access_token,
+                refresh_token=excluded.refresh_token,
+                expires_at=excluded.expires_at,
+                connected_at=excluded.connected_at
+        """, (bank, access_token, refresh_token, expires_at, connected_at))
+
+
+def get_connection(bank: str) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute("""
+            SELECT bank, access_token, refresh_token, expires_at, connected_at, last_sync
+            FROM bank_connections WHERE bank = ?
+        """, (bank,)).fetchone()
+    if not row:
+        return None
+    return {
+        "bank": row[0], "access_token": row[1], "refresh_token": row[2],
+        "expires_at": row[3], "connected_at": row[4], "last_sync": row[5],
+    }
+
+
+def get_all_connections() -> list:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT bank, connected_at, last_sync FROM bank_connections"
+        ).fetchall()
+    return [{"bank": r[0], "connected_at": r[1], "last_sync": r[2]} for r in rows]
+
+
+def update_sync_time(bank: str):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE bank_connections SET last_sync = ? WHERE bank = ?",
+            (datetime.utcnow().isoformat(), bank)
+        )
 
 
 def get_setting(key: str, default=None):

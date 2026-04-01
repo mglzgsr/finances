@@ -53,13 +53,34 @@
   @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.8)} }
 
   .header-right { display:flex; align-items:center; gap:16px; }
-  .bank-switcher { display:flex; gap:4px; }
+  .bank-switcher { display:flex; gap:4px; align-items:center; }
   .bank-btn {
     font-family:'DM Mono',monospace; font-size:11px; padding:6px 14px;
     border-radius:8px; border:1px solid var(--border); background:transparent;
-    color:var(--muted); cursor:pointer; transition:all .2s;
+    color:var(--muted); cursor:pointer; transition:all .2s; display:flex; align-items:center; gap:6px;
   }
   .bank-btn.active { background:var(--surface2); border-color:var(--accent); color:var(--text); }
+  .conn-dot { width:6px; height:6px; border-radius:50%; background:var(--muted); flex-shrink:0; }
+  .conn-dot.connected { background:var(--income); }
+
+  .sync-bar {
+    display:none; align-items:center; justify-content:space-between;
+    padding:8px 40px; background:var(--surface); border-bottom:1px solid var(--border);
+    font-size:11px; color:var(--muted);
+  }
+  .sync-bar.visible { display:flex; }
+  .sync-btn {
+    font-family:'DM Mono',monospace; font-size:11px; padding:5px 14px;
+    border-radius:8px; border:1px solid var(--border); background:transparent;
+    color:var(--text); cursor:pointer; transition:all .2s;
+  }
+  .sync-btn:hover { border-color:var(--accent); color:var(--accent); }
+  .sync-btn:disabled { opacity:.4; cursor:default; }
+  .connect-btn {
+    font-family:'Syne',sans-serif; font-weight:700; font-size:11px; padding:5px 14px;
+    border-radius:8px; border:none; background:var(--accent); color:#000; cursor:pointer; transition:opacity .2s;
+  }
+  .connect-btn:hover { opacity:.85; }
   .theme-btn {
     background:transparent; border:1px solid var(--border); color:var(--text);
     font-size:14px; padding:5px 10px; border-radius:8px; cursor:pointer; transition:border-color .2s;
@@ -319,8 +340,8 @@
   <div class="logo"><div class="logo-dot"></div>FINANCES</div>
   <div class="header-right">
     <div class="bank-switcher">
-      <button class="bank-btn active" data-bank="Lloyds">Lloyds</button>
-      <button class="bank-btn" data-bank="HSBC">HSBC</button>
+      <button class="bank-btn active" data-bank="Lloyds">Lloyds<span class="conn-dot" id="dotLloyds"></span></button>
+      <button class="bank-btn" data-bank="HSBC">HSBC<span class="conn-dot" id="dotHSBC"></span></button>
     </div>
     <select class="period-select" id="periodSelect">
       <option value="">Todo el histórico</option>
@@ -330,6 +351,15 @@
     <button class="upload-btn" id="uploadToggle">⬆ Subir CSV</button>
   </div>
 </header>
+
+<!-- Barra de estado Open Banking -->
+<div class="sync-bar" id="syncBar">
+  <span id="syncStatus"></span>
+  <div style="display:flex;gap:8px">
+    <button class="sync-btn" id="syncBtn">↻ Sincronizar</button>
+    <button class="connect-btn" id="connectBtn">Conectar banco</button>
+  </div>
+</div>
 
 <main class="main">
 
@@ -510,6 +540,67 @@ document.getElementById('periodSelect').addEventListener('change', e => {
   loadAll();
 });
 
+// ── Open Banking connections ──────────────────────────────────────────────────
+let connectionsCache = {};
+
+async function loadConnections() {
+  const data = await fetch(`${API}/api/connections`).then(r => r.json()).catch(() => ({}));
+  connectionsCache = data;
+
+  for (const bank of ['Lloyds', 'HSBC']) {
+    const dot = document.getElementById(`dot${bank}`);
+    if (dot) dot.classList.toggle('connected', !!data[bank]);
+  }
+  updateSyncBar();
+}
+
+function updateSyncBar() {
+  const bar        = document.getElementById('syncBar');
+  const statusEl   = document.getElementById('syncStatus');
+  const syncBtn    = document.getElementById('syncBtn');
+  const connectBtn = document.getElementById('connectBtn');
+  const conn       = connectionsCache[currentBank];
+
+  bar.classList.add('visible');
+
+  if (conn) {
+    const lastSync = conn.last_sync
+      ? new Date(conn.last_sync).toLocaleString('es', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})
+      : 'nunca';
+    statusEl.textContent = `${currentBank} conectado · última sync: ${lastSync}`;
+    syncBtn.style.display   = '';
+    connectBtn.style.display = 'none';
+  } else {
+    statusEl.textContent = `${currentBank} no conectado vía Open Banking`;
+    syncBtn.style.display   = 'none';
+    connectBtn.style.display = '';
+  }
+}
+
+document.getElementById('connectBtn').addEventListener('click', () => {
+  window.location.href = `${API}/connect?bank=${currentBank}`;
+});
+
+document.getElementById('syncBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('syncBtn');
+  btn.disabled = true;
+  btn.textContent = '↻ Sincronizando...';
+
+  const res = await fetch(`${API}/api/sync?bank=${currentBank}`, { method: 'POST' })
+    .then(r => r.json()).catch(() => null);
+
+  btn.disabled = false;
+  btn.textContent = '↻ Sincronizar';
+
+  if (res) {
+    showToast(`${res.new} nuevas · ${res.skipped} duplicadas`, 'ok');
+    await loadConnections();
+    await loadAll();
+  } else {
+    showToast('Error al sincronizar', 'err');
+  }
+});
+
 // ── Bank switcher ─────────────────────────────────────────────────────────────
 document.querySelectorAll('.bank-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
@@ -519,6 +610,7 @@ document.querySelectorAll('.bank-btn').forEach(btn => {
     currentYear = null;
     currentMonth = null;
     document.getElementById('periodSelect').value = '';
+    updateSyncBar();
     await Promise.all([populatePeriods(), loadAll()]);
   });
 });
@@ -928,7 +1020,7 @@ if ('serviceWorker' in navigator) {
 // ── Init ─────────────────────────────────────────────────────────────────────
 (async () => {
   await loadSettings();
-  await Promise.all([populatePeriods(), loadAll()]);
+  await Promise.all([populatePeriods(), loadAll(), loadConnections()]);
 })();
 </script>
 </body>

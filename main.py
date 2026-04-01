@@ -6,11 +6,15 @@ FastAPI backend: recibe CSVs, parsea, guarda en SQLite y sirve datos al dashboar
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
 import tempfile, os, shutil
 from pathlib import Path
 from typing import Optional
+from datetime import datetime, timedelta
+from dotenv import load_dotenv
+
+load_dotenv()
 
 BASE_DIR = Path(__file__).parent
 FRONTEND_DIR = BASE_DIR / "frontend"
@@ -19,8 +23,10 @@ from database import (
     init_db, save_transactions, get_summary, get_transactions,
     get_monthly_flow, get_categories_breakdown, update_transaction_category,
     get_all_categories, get_setting, set_setting, get_account_balance,
+    save_connection, get_connection, get_all_connections, update_sync_time,
 )
 from parsers import detect_bank, parse_lloyds, parse_hsbc, CATEGORY_RULES
+import open_banking as ob
 
 app = FastAPI(title="Finance Dashboard", version="1.0.0")
 
@@ -132,6 +138,70 @@ def category_list():
     db_cats = get_all_categories()
     all_cats = sorted(set(list(CATEGORY_RULES.keys()) + db_cats + ["Otros"]))
     return all_cats
+
+
+# ── Open Banking ─────────────────────────────────────────────────────────────
+@app.get("/connect")
+def connect(bank: str):
+    """Inicia el flujo OAuth de TrueLayer para el banco indicado."""
+    return RedirectResponse(ob.get_auth_url(state=bank))
+
+
+@app.get("/callback")
+def callback(code: str, state: str):
+    """TrueLayer redirige aquí tras autenticación. Guarda tokens y vuelve al dashboard."""
+    try:
+        tokens = ob.exchange_code(code)
+        save_connection(
+            bank=state,
+            access_token=tokens["access_token"],
+            refresh_token=tokens["refresh_token"],
+            expires_in=tokens.get("expires_in", 3600),
+        )
+    except Exception as e:
+        return RedirectResponse(f"/?error={str(e)}")
+    return RedirectResponse("/?connected=true")
+
+
+@app.post("/api/sync")
+def sync(bank: str):
+    """Sincroniza transacciones de TrueLayer para el banco indicado."""
+    conn_data = get_connection(bank)
+    if not conn_data:
+        raise HTTPException(status_code=404, detail="Banco no conectado")
+
+    # Refrescar token si caduca en menos de 5 minutos
+    expires_at = datetime.fromisoformat(conn_data["expires_at"])
+    if (expires_at - datetime.utcnow()).total_seconds() < 300:
+        tokens = ob.refresh_access_token(conn_data["refresh_token"])
+        save_connection(bank, tokens["access_token"], tokens["refresh_token"], tokens.get("expires_in", 3600))
+        access_token = tokens["access_token"]
+    else:
+        access_token = conn_data["access_token"]
+
+    from_date = (datetime.utcnow() - timedelta(days=90)).strftime("%Y-%m-%dT00:00:00Z")
+    accounts = ob.fetch_accounts(access_token)
+    total_new = total_skipped = 0
+
+    for account in accounts:
+        txs_raw = ob.fetch_transactions(access_token, account["account_id"], from_date)
+        txs = [ob.to_internal_tx(t, bank) for t in txs_raw]
+        new, skipped = save_transactions(txs)
+        total_new += new
+        total_skipped += skipped
+
+    update_sync_time(bank)
+    return {"bank": bank, "new": total_new, "skipped": total_skipped}
+
+
+@app.get("/api/connections")
+def connections():
+    """Estado de las conexiones Open Banking por banco."""
+    all_conns = {c["bank"]: c for c in get_all_connections()}
+    return {
+        "Lloyds": all_conns.get("Lloyds"),
+        "HSBC":   all_conns.get("HSBC"),
+    }
 
 
 class SettingsUpdate(BaseModel):
