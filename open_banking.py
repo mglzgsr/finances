@@ -40,13 +40,15 @@ def get_auth_url(state: str) -> str:
 
 def exchange_code(code: str) -> dict:
     """Intercambia el code de autorización por access + refresh tokens."""
-    resp = httpx.post(f"{AUTH_URL}/connect/token", data={
-        "grant_type": "authorization_code",
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "code": code,
-        "redirect_uri": REDIRECT_URI,
-    })
+    resp = httpx.post(
+        f"{AUTH_URL}/connect/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": REDIRECT_URI,
+        },
+        auth=(CLIENT_ID, CLIENT_SECRET),
+    )
     if not resp.is_success:
         print(f"[TrueLayer] token exchange error {resp.status_code}: {resp.text}")
     resp.raise_for_status()
@@ -55,12 +57,16 @@ def exchange_code(code: str) -> dict:
 
 def refresh_access_token(refresh_token: str) -> dict:
     """Renueva el access token usando el refresh token."""
-    resp = httpx.post(f"{AUTH_URL}/connect/token", data={
-        "grant_type": "refresh_token",
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "refresh_token": refresh_token,
-    })
+    resp = httpx.post(
+        f"{AUTH_URL}/connect/token",
+        data={
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+        },
+        auth=(CLIENT_ID, CLIENT_SECRET),
+    )
+    if not resp.is_success:
+        print(f"[TrueLayer] token refresh error {resp.status_code}: {resp.text}")
     resp.raise_for_status()
     return resp.json()
 
