@@ -184,15 +184,21 @@ def connect(bank: str):
 
 @app.get("/callback")
 def callback(code: str, state: str):
-    """TrueLayer redirige aquí tras autenticación. Guarda tokens y vuelve al dashboard."""
+    """TrueLayer redirige aquí tras autenticación. Guarda tokens y auto-descubre cuentas."""
     try:
         tokens = ob.exchange_code(code)
+        access_token = tokens["access_token"]
         save_connection(
             bank=state,
-            access_token=tokens["access_token"],
+            access_token=access_token,
             refresh_token=tokens["refresh_token"],
             expires_in=tokens.get("expires_in", 3600),
         )
+        # Auto-discover accounts from TrueLayer
+        tl_accounts = ob.fetch_accounts(access_token)
+        for i, tl_acc in enumerate(tl_accounts):
+            acc = ob.account_to_internal(tl_acc, connection_id=state, sort_order=i)
+            create_account(**acc)
     except Exception as e:
         return RedirectResponse(f"/?error={str(e)}")
     return RedirectResponse("/?connected=true")
@@ -215,23 +221,30 @@ def sync(bank: str):
         access_token = conn_data["access_token"]
 
     from_date = (datetime.utcnow() - timedelta(days=90)).strftime("%Y-%m-%dT00:00:00Z")
-    accounts = ob.fetch_accounts(access_token)
+    tl_accounts = ob.fetch_accounts(access_token)
     total_new = total_skipped = 0
 
-    total_balance = 0.0
-    for account in accounts:
-        txs_raw = ob.fetch_transactions(access_token, account["account_id"], from_date)
-        txs = [ob.to_internal_tx(t, bank) for t in txs_raw]
+    # Ensure accounts are registered (in case callback didn't run)
+    for i, tl_acc in enumerate(tl_accounts):
+        acc = ob.account_to_internal(tl_acc, connection_id=bank, sort_order=i)
+        create_account(**acc)
+
+    # Sync per individual account
+    for tl_acc in tl_accounts:
+        acc = ob.account_to_internal(tl_acc, connection_id=bank)
+        slug = acc["slug"]
+
+        txs_raw = ob.fetch_transactions(access_token, tl_acc["account_id"], from_date)
+        txs = [ob.to_internal_tx(t, slug) for t in txs_raw]
         new, skipped = save_transactions(txs)
         total_new += new
         total_skipped += skipped
-        bal = ob.fetch_balance(access_token, account["account_id"])
+
+        bal = ob.fetch_balance(access_token, tl_acc["account_id"])
         if bal is not None:
-            total_balance += bal
+            update_account_balance(slug, round(bal, 2))
 
     update_sync_time(bank)
-    if total_balance:
-        update_current_balance(bank, round(total_balance, 2))
     return {"bank": bank, "new": total_new, "skipped": total_skipped}
 
 

@@ -88,6 +88,42 @@ def fetch_accounts(access_token: str) -> list:
     return resp.json().get("results", [])
 
 
+_TL_TYPE_MAP = {
+    "TRANSACTION": "current",
+    "SAVINGS":     "savings",
+    "CREDIT_CARD": "credit",
+    "MORTGAGE":    "mortgage",
+    "PENSION":     "savings",
+}
+
+def account_to_internal(tl_account: dict, connection_id: str, sort_order: int = 0) -> dict:
+    """Convierte un account de TrueLayer al formato interno para la tabla accounts."""
+    tl_type    = tl_account.get("account_type", "TRANSACTION")
+    currency   = tl_account.get("currency", "GBP")
+    acc_type   = _TL_TYPE_MAP.get(tl_type, "current")
+    if acc_type == "current" and currency != "GBP":
+        acc_type = "multi_currency"
+
+    display    = tl_account.get("display_name", tl_account["account_id"])
+    # slug: connection_id + display_name + currency, lowercase, spaces → hyphens
+    raw_slug   = f"{connection_id}-{display}-{currency}".lower()
+    slug       = "".join(c if c.isalnum() else "-" for c in raw_slug).strip("-")
+    # Collapse multiple hyphens
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+
+    return {
+        "slug":                 slug,
+        "display_name":         f"{connection_id} · {display}" if currency != "GBP" else display,
+        "account_type":         acc_type,
+        "currency":             currency,
+        "source":               "truelayer",
+        "connection_id":        connection_id,
+        "truelayer_account_id": tl_account["account_id"],
+        "sort_order":           sort_order,
+    }
+
+
 def fetch_balance(access_token: str, account_id: str) -> float | None:
     """Devuelve el saldo actual de una cuenta según TrueLayer."""
     resp = httpx.get(
