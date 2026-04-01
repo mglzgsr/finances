@@ -360,6 +360,7 @@
   <div style="display:flex;gap:8px">
     <button class="sync-btn" id="syncBtn">↻ Sincronizar</button>
     <button class="connect-btn" id="connectBtn">Conectar banco</button>
+    <button class="connect-btn" id="addBankBtn">+ Añadir banco</button>
   </div>
 </div>
 
@@ -454,6 +455,19 @@
     <div class="cat-modal-actions">
       <button class="cat-modal-cancel" id="settingsCancel">Cancelar</button>
       <button class="cat-modal-confirm" id="settingsConfirm">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add bank modal -->
+<div class="cat-modal" id="addBankModal">
+  <div class="cat-modal-box">
+    <div class="cat-modal-title">Conectar banco</div>
+    <div class="cat-modal-desc">Introduce el nombre del banco tal como aparecerá en el dashboard</div>
+    <input type="text" class="cat-modal-select" id="addBankInput" placeholder="Ej: HSBC, AMEX..." style="width:100%;box-sizing:border-box;">
+    <div class="cat-modal-actions">
+      <button class="cat-modal-cancel" id="addBankCancel">Cancelar</button>
+      <button class="cat-modal-confirm" id="addBankConfirm">Conectar</button>
     </div>
   </div>
 </div>
@@ -611,6 +625,21 @@ function updateSyncBar() {
     connectBtn.style.display = '';
   }
 }
+
+document.getElementById('addBankBtn').addEventListener('click', () => {
+  document.getElementById('addBankInput').value = '';
+  document.getElementById('addBankModal').classList.add('visible');
+});
+document.getElementById('addBankCancel').addEventListener('click', () => {
+  document.getElementById('addBankModal').classList.remove('visible');
+});
+document.getElementById('addBankConfirm').addEventListener('click', () => {
+  const bank = document.getElementById('addBankInput').value.trim();
+  if (bank) {
+    document.getElementById('addBankModal').classList.remove('visible');
+    window.location.href = `${API}/connect?bank=${bank}`;
+  }
+});
 
 document.getElementById('connectBtn').addEventListener('click', () => {
   const connId = currentAccountMeta?.connection_id || currentAccount;
