@@ -6,7 +6,7 @@ FastAPI backend: recibe CSVs, parsea, guarda en SQLite y sirve datos al dashboar
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, HTMLResponse
 from pydantic import BaseModel
 import tempfile, os, shutil
 from pathlib import Path
@@ -206,8 +206,85 @@ def callback(code: str, state: str):
             acc = ob.card_to_internal(tl_card, connection_id=state, sort_order=len(tl_accounts) + i)
             create_account(**acc)
     except Exception as e:
-        return RedirectResponse(f"/?error={str(e)}")
-    return RedirectResponse("/?connected=true")
+        return _callback_page(success=False, message=str(e))
+    return _callback_page(success=True)
+
+
+def _callback_page(success: bool, message: str = "") -> HTMLResponse:
+    """Página intermedia post-OAuth para volver a la PWA desde Safari en iOS."""
+    if success:
+        title = "¡Banco conectado!"
+        body  = "La cuenta se ha conectado correctamente. Ahora sincroniza desde la app."
+        color = "#c8f135"
+        icon  = "✓"
+    else:
+        title = "Error al conectar"
+        body  = f"No se pudo completar la conexión: {message}"
+        color = "#ff4d4f"
+        icon  = "✕"
+
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Finance Dashboard</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0e0f11;
+      color: #e8e8e8;
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }}
+    .card {{
+      background: #1a1b1f;
+      border-radius: 20px;
+      padding: 40px 32px;
+      max-width: 360px;
+      width: 100%;
+      text-align: center;
+      border: 1px solid #2a2b30;
+    }}
+    .icon {{
+      width: 64px; height: 64px;
+      border-radius: 50%;
+      background: {color}22;
+      color: {color};
+      font-size: 28px;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 20px;
+      font-weight: 700;
+    }}
+    h1 {{ font-size: 22px; font-weight: 700; margin-bottom: 10px; }}
+    p  {{ font-size: 15px; color: #888; line-height: 1.5; margin-bottom: 32px; }}
+    a  {{
+      display: block;
+      background: {color};
+      color: #0e0f11;
+      font-weight: 700;
+      font-size: 16px;
+      padding: 14px 24px;
+      border-radius: 12px;
+      text-decoration: none;
+    }}
+    a:active {{ opacity: 0.8; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">{icon}</div>
+    <h1>{title}</h1>
+    <p>{body}</p>
+    <a href="/">Volver a la app</a>
+  </div>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
 
 
 @app.post("/api/sync")
