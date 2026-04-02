@@ -37,6 +37,7 @@
 - TrueLayer no soporta hipotecas (501 error esperado)
 - AMEX usa /data/v1/cards (no /accounts)
 - Balance: usa campo `available` con fallback a `current`
+- Tras OAuth en iOS: Safari no puede volver a la PWA — mostrar página intermedia con mensaje "Cierra Safari y abre la app"
 
 ## Base de datos — tablas principales
 - **transactions**: date, description, tx_type, is_debit, amount, balance, category, bank, hash, timestamp, account_id
@@ -52,29 +53,34 @@
 
 ## Frontend
 - Selector de cuentas (`<select id="accountSelect">`) poblado desde /api/accounts
+- Botón 🗑 junto al selector para eliminar cuenta (modal con opción de borrar también transacciones)
 - currentAccount = slug, currentAccountMeta = objeto completo con currency
 - currencySymbol() usa CURRENCY_SYMBOLS map (GBP→£, EUR→€, USD→$)
 - Modo oscuro/claro con persistencia en localStorage
-- Settings modal: contiene tema toggle + subir CSV
+- Settings modal (⚙): tema toggle + subir CSV + saldo inicial HSBC + zona de peligro (borrar DB)
 - Responsive: breakpoints 768px y 430px
 - PWA: manifest.json + service-worker.js + apple-touch-icon 180x180
+- En iOS: Safari → Compartir → Añadir a pantalla de inicio (no hay "Instalar app")
 
 ## PWA
 - manifest.json: /static/manifest.json
 - service-worker.js: /static/service-worker.js (caché assets, red para API)
-- Iconos: icon-192.png, icon-512.png, apple-touch-icon.png en /static/
-- En iOS: Safari → Compartir → Añadir a pantalla de inicio
+- Iconos: icon-192.png, icon-512.png, apple-touch-icon.png (180x180) en /static/
+- theme_color: #c8f135 (verde lima)
+- background_color: #0e0f11 (navy)
 
-## Decisiones técnicas
-- CSV sigue como importación histórica (TrueLayer solo da 90 días)
-- Categorías en español, hardcodeadas en parsers.py con edición manual desde UI
-- Transferencias internas Lloyds↔HSBC no se excluyen de totales
-- Orden de transacciones para balance: id ASC (TrueLayer inserta newest-first = id más bajo = más reciente)
-- Balance en /api/balance: usa current_balance de accounts si está disponible, sino calcula desde transacciones
+## Gestión de cuentas
+- DELETE /api/accounts/{slug}?delete_transactions=true/false
+- Eliminar cuenta: desaparece del selector, transacciones opcionales
+- DELETE /api/database: borra todo (transacciones + cuentas + bank_connections)
+  - Requiere escribir "BORRAR" en modal de confirmación
+  - Accesible desde Ajustes → Zona de peligro
 
 ## API endpoints principales
 - GET /api/accounts — lista de cuentas
 - POST /api/accounts — crear cuenta manual
+- DELETE /api/accounts/{slug}?delete_transactions=bool — eliminar cuenta
+- DELETE /api/database — reset completo
 - GET /api/summary?year&month&bank — KPIs
 - GET /api/transactions?year&month&category&bank&is_debit&limit&offset
 - GET /api/monthly-flow?months&bank
@@ -84,10 +90,20 @@
 - GET /api/connections — estado OAuth por banco
 - POST /api/sync?bank — sincronizar TrueLayer
 - GET /connect?bank — iniciar OAuth
-- GET /callback — callback OAuth
+- GET /callback — callback OAuth (devuelve HTML con mensaje, no redirect)
+
+## Decisiones técnicas
+- CSV sigue como importación histórica (TrueLayer solo da 90 días)
+- Categorías en español, hardcodeadas en parsers.py con edición manual desde UI
+- Transferencias internas Lloyds↔HSBC no se excluyen de totales
+- Orden de transacciones para balance: id ASC (TrueLayer inserta newest-first = id más bajo = más reciente)
+- Balance en /api/balance: usa current_balance de accounts si está disponible, sino calcula desde transacciones
+- Balance fallback: NO hereda saldo de otro banco (bug corregido — antes heredaba initial_balance_hsbc)
+- App es single-user — sin sistema de login propio, acceso vía Cloudflare Zero Trust
+- No Docker — venv directo en LXC, más simple para este caso de uso
 
 ## Pendiente / ideas futuras
 - Cuentas manuales para HSBC USD y HSBC hipoteca
-- Añadir AMEX al cron de sync automático
+- Añadir AMEX al cron de sync automático (actualmente solo Lloyds y HSBC)
 - Proteger categorías editadas manualmente al reimportar CSV
 - Excluir transferencias internas de totales
