@@ -292,7 +292,7 @@ def get_account_balance(bank: str, year=None, month=None) -> dict:
                 return {"current": end_row[0], "previous": None}
 
     # Fallback: calcula desde saldo inicial + movimientos acumulados
-    initial_str = get_setting(f"initial_balance_{bank}") or get_setting("initial_balance_hsbc")
+    initial_str = get_setting(f"initial_balance_{bank}")
     if initial_str is None:
         return {"current": None, "previous": None}
 
