@@ -214,7 +214,7 @@ def _callback_page(success: bool, message: str = "") -> HTMLResponse:
     """Página intermedia post-OAuth para volver a la PWA desde Safari en iOS."""
     if success:
         title = "¡Banco conectado!"
-        body  = "La cuenta se ha conectado correctamente. Ahora sincroniza desde la app."
+        body  = "Cierra Safari y abre la app desde la pantalla de inicio para sincronizar."
         color = "#c8f135"
         icon  = "✓"
     else:
