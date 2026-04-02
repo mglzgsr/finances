@@ -266,11 +266,7 @@ def sync(bank: str):
 @app.get("/api/connections")
 def connections():
     """Estado de las conexiones Open Banking por banco."""
-    all_conns = {c["bank"]: c for c in get_all_connections()}
-    return {
-        "Lloyds": all_conns.get("Lloyds"),
-        "HSBC":   all_conns.get("HSBC"),
-    }
+    return {c["bank"]: c for c in get_all_connections()}
 
 
 class SettingsUpdate(BaseModel):
