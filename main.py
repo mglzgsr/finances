@@ -18,6 +18,7 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).parent
 FRONTEND_DIR = BASE_DIR / "frontend"
+STATIC_DIR = BASE_DIR / "static"
 
 from database import (
     init_db, save_transactions, get_summary, get_transactions,
@@ -43,8 +44,9 @@ app.add_middleware(
 def startup():
     init_db()
 
-# ── Static frontend ──────────────────────────────────────────────────────────
-app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+# ── Static files ─────────────────────────────────────────────────────────────
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/frontend", StaticFiles(directory=FRONTEND_DIR), name="frontend")
 
 @app.get("/")
 def root():
