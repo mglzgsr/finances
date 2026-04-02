@@ -256,18 +256,15 @@
 
   @media(max-width:430px) {
     header { flex-direction:column; align-items:flex-start; gap:8px; padding:12px 16px; }
-    .header-right { width:100%; display:grid; grid-template-columns:1fr auto auto auto; gap:6px; align-items:center; }
-    .account-select { grid-column:1/2; min-width:0; width:100%; font-size:12px; }
-    .conn-dot { grid-column:2/3; }
-    .period-select { display:none; }
-    .theme-btn { grid-column:3/4; padding:5px 8px; }
-    .settings-btn { grid-column:4/5; padding:5px 8px; }
-    .upload-btn { width:100%; justify-content:center; margin-top:4px; }
+    .header-right { width:100%; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+    .account-select { flex:1; min-width:0; font-size:12px; }
+    .period-select { flex:1; min-width:0; font-size:12px; }
+    .upload-btn { width:100%; justify-content:center; }
 
-    .kpi-row { grid-template-columns:1fr 1fr; gap:8px; }
-    .kpi-card { padding:14px 12px; overflow:hidden; }
-    .kpi-value { font-size:20px; letter-spacing:-0.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .kpi-label { font-size:8px; letter-spacing:1px; margin-bottom:6px; }
+    .kpi-row { grid-template-columns:1fr; gap:8px; }
+    .kpi-card { padding:14px 16px; }
+    .kpi-value { font-size:26px; }
+    .kpi-label { font-size:9px; margin-bottom:6px; }
     .kpi-delta { font-size:10px; }
   }
 
@@ -381,6 +378,13 @@
     border-radius:8px; outline:none; width:100%;
   }
   .settings-input:focus { border-color:var(--accent); }
+  .settings-theme-btn, .settings-upload-btn {
+    background:var(--surface); border:1px solid var(--border); color:var(--text);
+    font-family:'DM Mono',monospace; font-size:13px; padding:10px 16px;
+    border-radius:8px; cursor:pointer; transition:border-color .2s, color .2s;
+    text-align:left; width:100%;
+  }
+  .settings-theme-btn:hover, .settings-upload-btn:hover { border-color:var(--accent); color:var(--accent); }
 </style>
 </head>
 <body>
@@ -397,9 +401,7 @@
     <select class="period-select" id="periodSelect">
       <option value="">Todo el histórico</option>
     </select>
-    <button class="theme-btn" id="themeBtn" title="Cambiar tema">🌙</button>
     <button class="settings-btn" id="settingsBtn" title="Ajustes">⚙</button>
-    <button class="upload-btn" id="uploadToggle">⬆ Subir CSV</button>
   </div>
 </header>
 
@@ -493,6 +495,20 @@
 <div class="settings-modal" id="settingsModal">
   <div class="settings-box">
     <div class="settings-title">⚙ Ajustes</div>
+
+    <!-- Tema -->
+    <div class="settings-field">
+      <div class="settings-label">Apariencia</div>
+      <button class="settings-theme-btn" id="themeBtn">🌙 Modo oscuro</button>
+    </div>
+
+    <!-- Subir CSV -->
+    <div class="settings-field">
+      <div class="settings-label">Importar datos</div>
+      <button class="settings-upload-btn" id="uploadToggle">⬆ Subir CSV</button>
+    </div>
+
+    <!-- Saldo inicial -->
     <div class="settings-field">
       <div class="settings-label">Saldo inicial HSBC</div>
       <input class="settings-input" id="settingsInitialBalance" type="number" step="0.01" min="0" placeholder="0.00">
@@ -551,16 +567,20 @@ let CC = CHART_DARK;
 
 // ── Theme toggle ──────────────────────────────────────────────────────────────
 const themeBtn = document.getElementById('themeBtn');
+function updateThemeBtn() {
+  const isLight = document.body.classList.contains('light-mode');
+  themeBtn.textContent = isLight ? '☀️ Modo claro' : '🌙 Modo oscuro';
+}
 (function initTheme() {
   if (localStorage.getItem('theme') === 'light') {
     document.body.classList.add('light-mode');
-    themeBtn.textContent = '☀️';
     CC = CHART_LIGHT;
   }
+  updateThemeBtn();
 })();
 themeBtn.addEventListener('click', () => {
   const isLight = document.body.classList.toggle('light-mode');
-  themeBtn.textContent = isLight ? '☀️' : '🌙';
+  updateThemeBtn();
   CC = isLight ? CHART_LIGHT : CHART_DARK;
   localStorage.setItem('theme', isLight ? 'light' : 'dark');
   loadFlow();
@@ -986,7 +1006,10 @@ const uploadToggle = document.getElementById('uploadToggle');
 const uploadZone   = document.getElementById('uploadZone');
 const fileInput    = document.getElementById('fileInput');
 
-uploadToggle.addEventListener('click', () => uploadZone.classList.toggle('visible'));
+uploadToggle.addEventListener('click', () => {
+  document.getElementById('settingsModal').classList.remove('visible');
+  uploadZone.classList.toggle('visible');
+});
 uploadZone.addEventListener('click', () => fileInput.click());
 uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag'); });
 uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag'));
