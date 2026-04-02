@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Finance Dashboard</title>
 <meta name="theme-color" content="#c8f135">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
@@ -254,10 +254,15 @@
     .logo-dot { width:7px; height:7px; }
   }
 
-  @media(max-width:400px) {
-    .kpi-row { grid-template-columns:1fr; }
+  @media(max-width:430px) {
+    .kpi-row { grid-template-columns:1fr 1fr; gap:8px; }
+    .kpi-card { padding:12px; }
+    .kpi-value { font-size:18px; letter-spacing:-0.5px; }
+    .kpi-label { font-size:8px; letter-spacing:1px; margin-bottom:6px; }
+    .kpi-delta { font-size:10px; }
     .header-right { justify-content:space-between; }
     .theme-btn, .settings-btn { padding:5px 8px; }
+    .upload-btn { padding:7px 10px; font-size:10px; }
   }
 
   /* Category edit modal */
