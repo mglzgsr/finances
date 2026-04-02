@@ -26,7 +26,7 @@ from database import (
     get_all_categories, get_setting, set_setting, get_account_balance,
     save_connection, get_connection, get_all_connections, update_sync_time,
     update_current_balance, get_all_accounts, get_account, create_account,
-    update_account_balance,
+    update_account_balance, delete_account,
 )
 from parsers import detect_bank, parse_lloyds, parse_hsbc, CATEGORY_RULES
 import open_banking as ob
@@ -175,6 +175,14 @@ def accounts_create(body: AccountCreate):
         sort_order=body.sort_order,
     )
     return get_account(body.slug)
+
+@app.delete("/api/accounts/{slug}")
+def accounts_delete(slug: str):
+    acc = get_account(slug)
+    if not acc:
+        raise HTTPException(status_code=404, detail="Account not found")
+    delete_account(slug)
+    return {"ok": True}
 
 
 # ── Open Banking ─────────────────────────────────────────────────────────────

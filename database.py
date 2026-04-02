@@ -456,6 +456,11 @@ def create_account(slug: str, display_name: str, account_type: str = "current",
         return cur.lastrowid
 
 
+def delete_account(slug: str):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM accounts WHERE slug = ?", (slug,))
+
+
 def update_account_balance(slug: str, balance: float):
     with get_conn() as conn:
         conn.execute(

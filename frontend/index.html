@@ -63,6 +63,8 @@
   .account-select:focus { outline:none; border-color:var(--accent); }
   .conn-dot { width:6px; height:6px; border-radius:50%; background:var(--muted); flex-shrink:0; }
   .conn-dot.connected { background:var(--income); }
+  .delete-account-btn { background:none; border:none; cursor:pointer; font-size:14px; opacity:0.4; padding:2px 4px; transition:opacity .2s; }
+  .delete-account-btn:hover { opacity:1; }
 
   .sync-bar {
     display:none; align-items:center; justify-content:space-between;
@@ -399,6 +401,7 @@
         <option value="">Cargando...</option>
       </select>
       <span class="conn-dot" id="connDot"></span>
+      <button class="delete-account-btn" id="deleteAccountBtn" title="Eliminar cuenta">🗑</button>
     </div>
     <select class="period-select" id="periodSelect">
       <option value="">Todo el histórico</option>
@@ -648,6 +651,18 @@ async function loadAccounts() {
   await loadConnections();
   await Promise.all([populatePeriods(), loadAll()]);
 }
+
+document.getElementById('deleteAccountBtn').addEventListener('click', async () => {
+  if (!currentAccount) return;
+  const name = currentAccountMeta?.display_name || currentAccount;
+  if (!confirm(`¿Eliminar "${name}"? Se eliminará la cuenta pero no sus transacciones.`)) return;
+  const res = await fetch(`${API}/api/accounts/${currentAccount}`, { method: 'DELETE' });
+  if (res.ok) {
+    await loadAccounts();
+  } else {
+    alert('Error al eliminar la cuenta');
+  }
+});
 
 document.getElementById('accountSelect').addEventListener('change', async e => {
   currentAccount = e.target.value;
