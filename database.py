@@ -464,6 +464,12 @@ def delete_transactions_by_bank(slug: str):
     with get_conn() as conn:
         conn.execute("DELETE FROM transactions WHERE bank = ?", (slug,))
 
+def reset_database():
+    with get_conn() as conn:
+        conn.execute("DELETE FROM transactions")
+        conn.execute("DELETE FROM accounts")
+        conn.execute("DELETE FROM bank_connections")
+
 
 def update_account_balance(slug: str, balance: float):
     with get_conn() as conn:

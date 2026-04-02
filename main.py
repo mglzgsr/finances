@@ -26,7 +26,7 @@ from database import (
     get_all_categories, get_setting, set_setting, get_account_balance,
     save_connection, get_connection, get_all_connections, update_sync_time,
     update_current_balance, get_all_accounts, get_account, create_account,
-    update_account_balance, delete_account, delete_transactions_by_bank,
+    update_account_balance, delete_account, delete_transactions_by_bank, reset_database,
 )
 from parsers import detect_bank, parse_lloyds, parse_hsbc, CATEGORY_RULES
 import open_banking as ob
@@ -175,6 +175,11 @@ def accounts_create(body: AccountCreate):
         sort_order=body.sort_order,
     )
     return get_account(body.slug)
+
+@app.delete("/api/database")
+def database_reset():
+    reset_database()
+    return {"ok": True}
 
 @app.delete("/api/accounts/{slug}")
 def accounts_delete(slug: str, delete_transactions: bool = False):

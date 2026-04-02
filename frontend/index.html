@@ -522,9 +522,28 @@
     <div class="settings-hint" style="border-left:2px solid var(--border);padding-left:10px">
       💡 El saldo de <strong>Lloyds</strong> se lee automáticamente del CSV — no necesita configuración.
     </div>
+    <!-- Zona de peligro -->
+    <div class="settings-field" style="border-top:1px solid var(--border);padding-top:16px;margin-top:4px">
+      <div class="settings-label" style="color:#ff4d4f">Zona de peligro</div>
+      <button class="settings-upload-btn" id="resetDbBtn" style="background:#ff4d4f22;color:#ff4d4f;border-color:#ff4d4f44">🗑 Borrar toda la base de datos</button>
+    </div>
+
     <div class="cat-modal-actions">
       <button class="cat-modal-cancel" id="settingsCancel">Cancelar</button>
       <button class="cat-modal-confirm" id="settingsConfirm">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reset DB modal -->
+<div class="cat-modal" id="resetDbModal">
+  <div class="cat-modal-box">
+    <div class="cat-modal-title" style="color:#ff4d4f">⚠ Borrar todo</div>
+    <div class="cat-modal-desc">Esto eliminará <strong>todas las transacciones y cuentas</strong>. No se puede deshacer.<br><br>Escribe <strong>BORRAR</strong> para confirmar:</div>
+    <input type="text" class="cat-modal-select" id="resetDbConfirmInput" placeholder="BORRAR" style="width:100%;box-sizing:border-box;margin-top:12px">
+    <div class="cat-modal-actions">
+      <button class="cat-modal-cancel" id="resetDbCancel">Cancelar</button>
+      <button class="cat-modal-confirm" id="resetDbConfirm" style="background:#ff4d4f;opacity:0.4" disabled>Borrar todo</button>
     </div>
   </div>
 </div>
@@ -986,6 +1005,36 @@ document.getElementById('settingsConfirm').addEventListener('click', async () =>
     await loadBalance();
   } else {
     showToast('Error al guardar', 'err');
+  }
+});
+
+// ── Reset DB modal ────────────────────────────────────────────────────────────
+document.getElementById('resetDbBtn').addEventListener('click', () => {
+  document.getElementById('settingsModal').classList.remove('visible');
+  document.getElementById('resetDbConfirmInput').value = '';
+  document.getElementById('resetDbConfirm').disabled = true;
+  document.getElementById('resetDbConfirm').style.opacity = '0.4';
+  document.getElementById('resetDbModal').classList.add('visible');
+});
+
+document.getElementById('resetDbConfirmInput').addEventListener('input', e => {
+  const ok = e.target.value.trim() === 'BORRAR';
+  document.getElementById('resetDbConfirm').disabled = !ok;
+  document.getElementById('resetDbConfirm').style.opacity = ok ? '1' : '0.4';
+});
+
+document.getElementById('resetDbCancel').addEventListener('click', () => {
+  document.getElementById('resetDbModal').classList.remove('visible');
+});
+
+document.getElementById('resetDbConfirm').addEventListener('click', async () => {
+  document.getElementById('resetDbModal').classList.remove('visible');
+  const res = await fetch(`${API}/api/database`, { method: 'DELETE' });
+  if (res.ok) {
+    showToast('Base de datos borrada', 'ok');
+    await loadAccounts();
+  } else {
+    showToast('Error al borrar', 'err');
   }
 });
 
