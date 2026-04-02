@@ -460,6 +460,10 @@ def delete_account(slug: str):
     with get_conn() as conn:
         conn.execute("DELETE FROM accounts WHERE slug = ?", (slug,))
 
+def delete_transactions_by_bank(slug: str):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM transactions WHERE bank = ?", (slug,))
+
 
 def update_account_balance(slug: str, balance: float):
     with get_conn() as conn:

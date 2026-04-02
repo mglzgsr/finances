@@ -529,6 +529,19 @@
   </div>
 </div>
 
+<!-- Delete account modal -->
+<div class="cat-modal" id="deleteAccountModal">
+  <div class="cat-modal-box">
+    <div class="cat-modal-title">Eliminar cuenta</div>
+    <div class="cat-modal-desc" id="deleteAccountDesc"></div>
+    <div class="cat-modal-actions" style="flex-direction:column;gap:8px">
+      <button class="cat-modal-confirm" id="deleteAccountWithTx" style="background:#ff4d4f;color:#fff">Eliminar cuenta y transacciones</button>
+      <button class="cat-modal-confirm" id="deleteAccountOnly">Eliminar solo la cuenta</button>
+      <button class="cat-modal-cancel" id="deleteAccountCancel">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Add bank modal -->
 <div class="cat-modal" id="addBankModal">
   <div class="cat-modal-box">
@@ -652,17 +665,28 @@ async function loadAccounts() {
   await Promise.all([populatePeriods(), loadAll()]);
 }
 
-document.getElementById('deleteAccountBtn').addEventListener('click', async () => {
+document.getElementById('deleteAccountBtn').addEventListener('click', () => {
   if (!currentAccount) return;
   const name = currentAccountMeta?.display_name || currentAccount;
-  if (!confirm(`¿Eliminar "${name}"? Se eliminará la cuenta pero no sus transacciones.`)) return;
-  const res = await fetch(`${API}/api/accounts/${currentAccount}`, { method: 'DELETE' });
+  document.getElementById('deleteAccountDesc').textContent = `¿Qué quieres hacer con "${name}"?`;
+  document.getElementById('deleteAccountModal').classList.add('visible');
+});
+
+async function doDeleteAccount(deleteTransactions) {
+  document.getElementById('deleteAccountModal').classList.remove('visible');
+  const res = await fetch(`${API}/api/accounts/${currentAccount}?delete_transactions=${deleteTransactions}`, { method: 'DELETE' });
   if (res.ok) {
     await loadAccounts();
   } else {
     alert('Error al eliminar la cuenta');
   }
+}
+
+document.getElementById('deleteAccountCancel').addEventListener('click', () => {
+  document.getElementById('deleteAccountModal').classList.remove('visible');
 });
+document.getElementById('deleteAccountOnly').addEventListener('click', () => doDeleteAccount(false));
+document.getElementById('deleteAccountWithTx').addEventListener('click', () => doDeleteAccount(true));
 
 document.getElementById('accountSelect').addEventListener('change', async e => {
   currentAccount = e.target.value;
