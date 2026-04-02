@@ -518,8 +518,10 @@ themeBtn.addEventListener('click', () => {
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-const fmt = v => '£' + Number(v).toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2});
-const fmtShort = v => '£' + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(0));
+const CURRENCY_SYMBOLS = { GBP: '£', EUR: '€', USD: '$' };
+const currencySymbol = () => CURRENCY_SYMBOLS[currentAccountMeta?.currency] || currentAccountMeta?.currency || '£';
+const fmt = v => currencySymbol() + Number(v).toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2});
+const fmtShort = v => currencySymbol() + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(0));
 const escapeHtml = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
 function showToast(msg, type='ok') {
