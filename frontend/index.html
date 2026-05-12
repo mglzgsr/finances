@@ -291,6 +291,20 @@
   }
   .cat-modal-select:focus { border-color:var(--accent); }
   .cat-modal-actions { display:flex; gap:10px; justify-content:flex-end; }
+  .cat-modal-input {
+    width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px;
+    background:var(--surface2); color:var(--text); font-size:13px; margin-top:10px;
+    box-sizing:border-box;
+  }
+  .cat-modal-input:focus { outline:none; border-color:var(--accent); }
+  .cat-modal-similar { margin-top:10px; border:1px solid var(--border); border-radius:6px; overflow:hidden; }
+  .cat-modal-similar-header { font-size:11px; color:var(--muted); padding:6px 10px; background:var(--surface2); border-bottom:1px solid var(--border); }
+  .cat-modal-similar-list { max-height:130px; overflow-y:auto; }
+  .cat-modal-similar-item { display:grid; grid-template-columns:70px 1fr auto; gap:6px; padding:5px 10px; font-size:11px; border-bottom:1px solid var(--border); align-items:center; }
+  .cat-modal-similar-item:last-child { border-bottom:none; }
+  .cat-modal-similar-date { color:var(--muted); }
+  .cat-modal-similar-cat { color:var(--muted); font-size:10px; }
+  .cat-modal-similar-amount { font-weight:600; white-space:nowrap; }
   .cat-modal-cancel {
     background:transparent; border:1px solid var(--border); color:var(--muted);
     font-family:'DM Mono',monospace; font-size:12px; padding:7px 16px;
@@ -580,7 +594,9 @@
   <div class="cat-modal-box">
     <div class="cat-modal-title">Cambiar categoría</div>
     <div class="cat-modal-desc" id="catModalDesc"></div>
-    <select class="cat-modal-select" id="catModalSelect"></select>
+    <input class="cat-modal-input" id="catModalInput" type="text" list="catModalDatalist" placeholder="Categoría...">
+    <datalist id="catModalDatalist"></datalist>
+    <div class="cat-modal-similar" id="catModalSimilar" style="display:none"></div>
     <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-top:8px;cursor:pointer;">
       <input type="checkbox" id="catModalApplyAll" style="accent-color:var(--accent);width:14px;height:14px;">
       Aplicar a todas las transacciones similares
@@ -967,7 +983,7 @@ async function loadTransactions() {
           <div class="tx-icon">${icon}</div>
           <div>
             <div class="tx-name">${escapeHtml(t.description.slice(0,40))}</div>
-            <div class="tx-meta">${t.date} · ${t.bank} · <span class="cat-edit-btn" data-id="${t.id}" data-cat="${escapeHtml(t.category)}" data-desc="${escapeHtml(t.description.slice(0,60))}">${escapeHtml(t.category)} ✏️</span></div>
+            <div class="tx-meta">${t.date} · ${t.bank} · <span class="cat-edit-btn" data-id="${t.id}" data-cat="${escapeHtml(t.category)}" data-desc="${escapeHtml(t.description.slice(0,60))}" data-full-desc="${escapeHtml(t.description)}">${escapeHtml(t.category)} ✏️</span></div>
           </div>
         </div>
         <div class="tx-amount ${cls}">${sign}${fmt(t.amount)}</div>
@@ -1053,10 +1069,35 @@ async function openCatEditModal(btn) {
   if (!categoryListCache) {
     categoryListCache = await fetch(`${API}/api/category-list`).then(r => r.json()).catch(() => []);
   }
-  const select = document.getElementById('catModalSelect');
-  select.innerHTML = categoryListCache.map(c =>
-    `<option value="${escapeHtml(c)}" ${c === btn.dataset.cat ? 'selected' : ''}>${escapeHtml(c)}</option>`
-  ).join('');
+  const datalist = document.getElementById('catModalDatalist');
+  datalist.innerHTML = categoryListCache.map(c => `<option value="${escapeHtml(c)}">`).join('');
+  document.getElementById('catModalInput').value = btn.dataset.cat;
+
+  // Cargar transacciones similares
+  const fullDesc = btn.dataset.fullDesc;
+  const similarEl = document.getElementById('catModalSimilar');
+  similarEl.style.display = 'none';
+  similarEl.innerHTML = '';
+  if (fullDesc) {
+    const params = new URLSearchParams({ description: fullDesc, limit: 200, offset: 0 });
+    fetch(`${API}/api/transactions?${params}`)
+      .then(r => r.json())
+      .then(data => {
+        if (!data || data.total <= 1) return;
+        const items = data.transactions.map(t => {
+          const sign = t.is_debit ? '-' : '+';
+          const cls  = t.is_debit ? 'expense' : 'income';
+          const icon = CAT_ICONS[t.category] || '📦';
+          return `<div class="cat-modal-similar-item">
+            <span class="cat-modal-similar-date">${t.date}</span>
+            <span class="cat-modal-similar-cat">${icon} ${escapeHtml(t.category)}</span>
+            <span class="cat-modal-similar-amount ${cls}">${sign}${fmt(t.amount)}</span>
+          </div>`;
+        }).join('');
+        similarEl.innerHTML = `<div class="cat-modal-similar-header">${data.total} transacciones con esta descripción</div><div class="cat-modal-similar-list">${items}</div>`;
+        similarEl.style.display = 'block';
+      }).catch(() => {});
+  }
 
   document.getElementById('catModal').classList.add('visible');
 }
@@ -1074,21 +1115,22 @@ document.getElementById('catPanelBody').addEventListener('click', async e => {
 });
 
 
-document.getElementById('catModalCancel').addEventListener('click', () => {
+function closeCatModal() {
   document.getElementById('catModal').classList.remove('visible');
+  document.getElementById('catModalSimilar').style.display = 'none';
+  document.getElementById('catModalApplyAll').checked = false;
   editingTxId = null;
-});
+}
 
+document.getElementById('catModalCancel').addEventListener('click', closeCatModal);
 document.getElementById('catModal').addEventListener('click', e => {
-  if (e.target === e.currentTarget) {
-    e.currentTarget.classList.remove('visible');
-    editingTxId = null;
-  }
+  if (e.target === e.currentTarget) closeCatModal();
 });
 
 document.getElementById('catModalConfirm').addEventListener('click', async () => {
   if (!editingTxId) return;
-  const category = document.getElementById('catModalSelect').value;
+  const category = document.getElementById('catModalInput').value.trim();
+  if (!category) return;
   const applyToSimilar = document.getElementById('catModalApplyAll').checked;
   const res = await fetch(`${API}/api/transactions/${editingTxId}/category`, {
     method: 'PATCH',
@@ -1096,9 +1138,7 @@ document.getElementById('catModalConfirm').addEventListener('click', async () =>
     body: JSON.stringify({category, apply_to_similar: applyToSimilar}),
   }).then(r => r.ok ? r.json() : null).catch(() => null);
 
-  document.getElementById('catModal').classList.remove('visible');
-  document.getElementById('catModalApplyAll').checked = false;
-  editingTxId = null;
+  closeCatModal();
 
   if (res) {
     categoryListCache = null;
@@ -1218,7 +1258,7 @@ async function loadPanelTransactions(extraParams) {
           <div class="cat-panel-tx-date">${t.date}</div>
           <div>
             <div class="cat-panel-tx-desc">${escapeHtml(t.description)}</div>
-            <div class="cat-panel-tx-meta"><span class="cat-edit-btn" data-id="${t.id}" data-cat="${escapeHtml(t.category)}" data-desc="${escapeHtml(t.description.slice(0,60))}">${icon} ${escapeHtml(t.category)} ✏️</span> · ${t.tx_type}</div>
+            <div class="cat-panel-tx-meta"><span class="cat-edit-btn" data-id="${t.id}" data-cat="${escapeHtml(t.category)}" data-desc="${escapeHtml(t.description.slice(0,60))}" data-full-desc="${escapeHtml(t.description)}">${icon} ${escapeHtml(t.category)} ✏️</span> · ${t.tx_type}</div>
           </div>
         </div>
         <div class="cat-panel-tx-amount ${cls}">${sign}${fmt(t.amount)}</div>
