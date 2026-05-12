@@ -594,8 +594,8 @@
   <div class="cat-modal-box">
     <div class="cat-modal-title">Cambiar categoría</div>
     <div class="cat-modal-desc" id="catModalDesc"></div>
-    <input class="cat-modal-input" id="catModalInput" type="text" list="catModalDatalist" placeholder="Categoría...">
-    <datalist id="catModalDatalist"></datalist>
+    <select class="cat-modal-select" id="catModalSelect"></select>
+    <input class="cat-modal-input" id="catModalNewInput" type="text" placeholder="Nombre de la nueva categoría..." style="display:none;margin-top:6px;">
     <div class="cat-modal-similar" id="catModalSimilar" style="display:none"></div>
     <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-top:8px;cursor:pointer;">
       <input type="checkbox" id="catModalApplyAll" style="accent-color:var(--accent);width:14px;height:14px;">
@@ -1062,6 +1062,19 @@ document.getElementById('resetDbConfirm').addEventListener('click', async () => 
 // ── Category edit modal ───────────────────────────────────────────────────────
 let editingTxId = null;
 
+const NEW_CAT_VALUE = '__nueva__';
+
+document.getElementById('catModalSelect').addEventListener('change', e => {
+  const newInput = document.getElementById('catModalNewInput');
+  if (e.target.value === NEW_CAT_VALUE) {
+    newInput.style.display = 'block';
+    newInput.focus();
+  } else {
+    newInput.style.display = 'none';
+    newInput.value = '';
+  }
+});
+
 async function openCatEditModal(btn) {
   editingTxId = parseInt(btn.dataset.id);
   document.getElementById('catModalDesc').textContent = btn.dataset.desc;
@@ -1069,9 +1082,12 @@ async function openCatEditModal(btn) {
   if (!categoryListCache) {
     categoryListCache = await fetch(`${API}/api/category-list`).then(r => r.json()).catch(() => []);
   }
-  const datalist = document.getElementById('catModalDatalist');
-  datalist.innerHTML = categoryListCache.map(c => `<option value="${escapeHtml(c)}">`).join('');
-  document.getElementById('catModalInput').value = btn.dataset.cat;
+  const select = document.getElementById('catModalSelect');
+  select.innerHTML = categoryListCache.map(c =>
+    `<option value="${escapeHtml(c)}" ${c === btn.dataset.cat ? 'selected' : ''}>${escapeHtml(c)}</option>`
+  ).join('') + `<option value="${NEW_CAT_VALUE}">＋ Nueva categoría...</option>`;
+  document.getElementById('catModalNewInput').style.display = 'none';
+  document.getElementById('catModalNewInput').value = '';
 
   // Cargar transacciones similares
   const fullDesc = btn.dataset.fullDesc;
@@ -1119,6 +1135,8 @@ function closeCatModal() {
   document.getElementById('catModal').classList.remove('visible');
   document.getElementById('catModalSimilar').style.display = 'none';
   document.getElementById('catModalApplyAll').checked = false;
+  document.getElementById('catModalNewInput').style.display = 'none';
+  document.getElementById('catModalNewInput').value = '';
   editingTxId = null;
 }
 
@@ -1129,7 +1147,10 @@ document.getElementById('catModal').addEventListener('click', e => {
 
 document.getElementById('catModalConfirm').addEventListener('click', async () => {
   if (!editingTxId) return;
-  const category = document.getElementById('catModalInput').value.trim();
+  const selectVal = document.getElementById('catModalSelect').value;
+  const category = selectVal === NEW_CAT_VALUE
+    ? document.getElementById('catModalNewInput').value.trim()
+    : selectVal;
   if (!category) return;
   const applyToSimilar = document.getElementById('catModalApplyAll').checked;
   const res = await fetch(`${API}/api/transactions/${editingTxId}/category`, {
