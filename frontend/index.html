@@ -350,6 +350,7 @@
   .cat-panel-tx-desc { font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .cat-panel-tx-meta { font-size:10px; color:var(--muted); margin-top:2px; }
   .cat-panel-tx-amount { font-family:'Syne',sans-serif; font-size:14px; font-weight:600; white-space:nowrap; margin-left:16px; }
+  .cat-panel-tx .cat-edit-btn { cursor:pointer; border-bottom:1px dashed var(--muted); }
 
   /* Make category items look clickable */
   .cat-drilldown { cursor:pointer; border-radius:8px; padding:4px 6px; margin:-4px -6px; transition:background .15s; }
@@ -1041,9 +1042,7 @@ document.getElementById('resetDbConfirm').addEventListener('click', async () => 
 // ── Category edit modal ───────────────────────────────────────────────────────
 let editingTxId = null;
 
-document.getElementById('txList').addEventListener('click', async e => {
-  const btn = e.target.closest('.cat-edit-btn');
-  if (!btn) return;
+async function openCatEditModal(btn) {
   editingTxId = parseInt(btn.dataset.id);
   document.getElementById('catModalDesc').textContent = btn.dataset.desc;
 
@@ -1056,7 +1055,20 @@ document.getElementById('txList').addEventListener('click', async e => {
   ).join('');
 
   document.getElementById('catModal').classList.add('visible');
+}
+
+document.getElementById('txList').addEventListener('click', async e => {
+  const btn = e.target.closest('.cat-edit-btn');
+  if (!btn) return;
+  await openCatEditModal(btn);
 });
+
+document.getElementById('catPanelBody').addEventListener('click', async e => {
+  const btn = e.target.closest('.cat-edit-btn');
+  if (!btn) return;
+  await openCatEditModal(btn);
+});
+
 
 document.getElementById('catModalCancel').addEventListener('click', () => {
   document.getElementById('catModal').classList.remove('visible');
@@ -1083,9 +1095,12 @@ document.getElementById('catModalConfirm').addEventListener('click', async () =>
   editingTxId = null;
 
   if (ok) {
-    categoryListCache = null; // invalidar caché por si es categoría nueva
+    categoryListCache = null;
     showToast('Categoría actualizada', 'ok');
     await loadAll();
+    if (document.getElementById('catPanel').classList.contains('visible') && currentPanelParams) {
+      loadPanelTransactions(currentPanelParams);
+    }
   } else {
     showToast('Error al actualizar la categoría', 'err');
   }
@@ -1143,6 +1158,8 @@ async function handleFiles(files) {
 }
 
 // ── Transaction panel (genérico: categorías, ingresos, gastos) ────────────────
+let currentPanelParams = null;
+
 function currentPeriodLabel() {
   if (currentYear && currentMonth) return `${currentYear}-${String(currentMonth).padStart(2,'0')}`;
   if (currentYear) return String(currentYear);
@@ -1150,6 +1167,7 @@ function currentPeriodLabel() {
 }
 
 function openTransactionPanel(title, total, totalColor, extraParams) {
+  currentPanelParams = extraParams;
   document.getElementById('catPanelTitle').textContent = title;
   document.getElementById('catPanelSubtitle').textContent = currentPeriodLabel();
   const totalEl = document.getElementById('catPanelTotal');
@@ -1193,7 +1211,7 @@ async function loadPanelTransactions(extraParams) {
           <div class="cat-panel-tx-date">${t.date}</div>
           <div>
             <div class="cat-panel-tx-desc">${escapeHtml(t.description)}</div>
-            <div class="cat-panel-tx-meta">${icon} ${escapeHtml(t.category)} · ${t.tx_type}</div>
+            <div class="cat-panel-tx-meta"><span class="cat-edit-btn" data-id="${t.id}" data-cat="${escapeHtml(t.category)}" data-desc="${escapeHtml(t.description.slice(0,60))}">${icon} ${escapeHtml(t.category)} ✏️</span> · ${t.tx_type}</div>
           </div>
         </div>
         <div class="cat-panel-tx-amount ${cls}">${sign}${fmt(t.amount)}</div>
