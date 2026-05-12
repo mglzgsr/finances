@@ -331,6 +331,21 @@ def update_transaction_category(tx_id: int, category: str) -> bool:
         return cur.rowcount > 0
 
 
+def get_transaction_description(tx_id: int) -> str | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT description FROM transactions WHERE id = ?", (tx_id,)).fetchone()
+    return row[0] if row else None
+
+
+def update_category_by_description(description: str, category: str) -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE transactions SET category = ? WHERE description = ?",
+            (category, description)
+        )
+        return cur.rowcount
+
+
 def get_all_categories() -> list:
     with get_conn() as conn:
         rows = conn.execute(

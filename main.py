@@ -23,7 +23,8 @@ STATIC_DIR = BASE_DIR / "static"
 from database import (
     init_db, save_transactions, get_summary, get_transactions,
     get_monthly_flow, get_categories_breakdown, update_transaction_category,
-    get_all_categories, get_setting, set_setting, get_account_balance,
+    get_all_categories, get_transaction_description, update_category_by_description,
+    get_setting, set_setting, get_account_balance,
     save_connection, get_connection, get_all_connections, update_sync_time,
     update_current_balance, get_all_accounts, get_account, create_account,
     update_account_balance, delete_account, delete_transactions_by_bank, reset_database,
@@ -134,13 +135,19 @@ def balance(
 
 class CategoryUpdate(BaseModel):
     category: str
+    apply_to_similar: bool = False
 
 @app.patch("/api/transactions/{tx_id}/category")
 def patch_category(tx_id: int, body: CategoryUpdate):
     ok = update_transaction_category(tx_id, body.category)
     if not ok:
         raise HTTPException(status_code=404, detail="Transaction not found")
-    return {"ok": True}
+    if body.apply_to_similar:
+        desc = get_transaction_description(tx_id)
+        if desc:
+            updated = update_category_by_description(desc, body.category)
+            return {"ok": True, "updated": updated}
+    return {"ok": True, "updated": 1}
 
 @app.get("/api/category-list")
 def category_list():
