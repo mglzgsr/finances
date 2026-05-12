@@ -581,6 +581,10 @@
     <div class="cat-modal-title">Cambiar categoría</div>
     <div class="cat-modal-desc" id="catModalDesc"></div>
     <select class="cat-modal-select" id="catModalSelect"></select>
+    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-top:8px;cursor:pointer;">
+      <input type="checkbox" id="catModalApplyAll" style="accent-color:var(--accent);width:14px;height:14px;">
+      Aplicar a todas las transacciones similares
+    </label>
     <div class="cat-modal-actions">
       <button class="cat-modal-cancel" id="catModalCancel">Cancelar</button>
       <button class="cat-modal-confirm" id="catModalConfirm">Guardar</button>
@@ -1085,18 +1089,21 @@ document.getElementById('catModal').addEventListener('click', e => {
 document.getElementById('catModalConfirm').addEventListener('click', async () => {
   if (!editingTxId) return;
   const category = document.getElementById('catModalSelect').value;
-  const ok = await fetch(`${API}/api/transactions/${editingTxId}/category`, {
+  const applyToSimilar = document.getElementById('catModalApplyAll').checked;
+  const res = await fetch(`${API}/api/transactions/${editingTxId}/category`, {
     method: 'PATCH',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({category}),
-  }).then(r => r.ok).catch(() => false);
+    body: JSON.stringify({category, apply_to_similar: applyToSimilar}),
+  }).then(r => r.ok ? r.json() : null).catch(() => null);
 
   document.getElementById('catModal').classList.remove('visible');
+  document.getElementById('catModalApplyAll').checked = false;
   editingTxId = null;
 
-  if (ok) {
+  if (res) {
     categoryListCache = null;
-    showToast('Categoría actualizada', 'ok');
+    const msg = res.updated > 1 ? `${res.updated} transacciones actualizadas` : 'Categoría actualizada';
+    showToast(msg, 'ok');
     await loadAll();
     if (document.getElementById('catPanel').classList.contains('visible') && currentPanelParams) {
       loadPanelTransactions(currentPanelParams);
