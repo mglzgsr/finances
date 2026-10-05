@@ -34,10 +34,6 @@ def init_db():
             )
         """)
         conn.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_truelayer_account_id
-            ON accounts(truelayer_account_id)
-        """)
-        conn.execute("""
             CREATE TABLE IF NOT EXISTS transactions (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 date        TEXT NOT NULL,
@@ -65,6 +61,35 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_category   ON transactions(category)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_bank       ON transactions(bank)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_account_id ON transactions(account_id)")
+        # La versión anterior podía recrear cuentas con otro nombre al sincronizar.
+        # Conservar la cuenta original y archivar los duplicados sin borrar datos.
+        duplicate_ids = conn.execute("""
+            SELECT truelayer_account_id FROM accounts
+            WHERE truelayer_account_id IS NOT NULL
+            GROUP BY truelayer_account_id HAVING COUNT(*) > 1
+        """).fetchall()
+        for (external_id,) in duplicate_ids:
+            rows = conn.execute("""
+                SELECT id, slug, current_balance, last_sync FROM accounts
+                WHERE truelayer_account_id = ? ORDER BY id
+            """, (external_id,)).fetchall()
+            keeper_id, keeper_slug, _, _ = rows[0]
+            latest = max(rows, key=lambda row: row[3] or "")
+            if latest[3]:
+                conn.execute("UPDATE accounts SET current_balance = ?, last_sync = ? WHERE id = ?",
+                             (latest[2], latest[3], keeper_id))
+            for duplicate_id, duplicate_slug, _, _ in rows[1:]:
+                conn.execute("UPDATE transactions SET bank = ? WHERE bank = ?",
+                             (keeper_slug, duplicate_slug))
+                conn.execute("UPDATE transactions SET account_id = ? WHERE account_id = ?",
+                             (keeper_id, duplicate_id))
+                conn.execute("""
+                    UPDATE accounts SET is_active = 0, truelayer_account_id = NULL WHERE id = ?
+                """, (duplicate_id,))
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_truelayer_account_id
+            ON accounts(truelayer_account_id)
+        """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS settings (
                 key   TEXT PRIMARY KEY,

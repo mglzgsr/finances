@@ -64,6 +64,21 @@ class DatabaseIdentityTests(unittest.TestCase):
         self.assertEqual(database.get_all_connections()[0]['refresh_expires_at'], connection['refresh_expires_at'])
         self.assertNotEqual(connection['refresh_expires_at'], '2000-01-01')
 
+    def test_duplicate_accounts_migrate_without_deleting_transactions(self):
+        original = database.create_account('original', 'Original', truelayer_account_id='stable')
+        with database.get_conn() as conn:
+            conn.execute('DROP INDEX idx_accounts_truelayer_account_id')
+            duplicate = conn.execute("INSERT INTO accounts (slug, display_name, truelayer_account_id, current_balance, last_sync) VALUES ('renamed', 'Renamed', 'stable', 42, '2026-10-05')").lastrowid
+            conn.execute("INSERT INTO transactions (date, description, is_debit, amount, category, bank, hash, account_id) VALUES ('2026-10-05', 'Example', 1, 10, 'Otros', 'renamed', 'unique', ?)", (duplicate,))
+        database.init_db()
+        database.init_db()
+        self.assertEqual(len(database.get_all_accounts()), 1)
+        self.assertEqual(database.get_account('original')['current_balance'], 42)
+        self.assertFalse(database.get_account('renamed')['is_active'])
+        with database.get_conn() as conn:
+            self.assertEqual(conn.execute('SELECT bank, account_id FROM transactions').fetchall(), [('original', original)])
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM accounts').fetchone()[0], 2)
+
     def test_existing_schema_migrates_idempotently(self):
         with database.get_conn() as conn:
             conn.execute('DROP INDEX idx_accounts_truelayer_account_id')
