@@ -9,6 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse, HTMLResponse
 from pydantic import BaseModel
 import tempfile, os, shutil
+import httpx
+from functools import wraps
 from pathlib import Path
 from typing import Optional
 from datetime import datetime, timedelta
@@ -27,7 +29,7 @@ from database import (
     get_setting, set_setting, get_account_balance,
     save_connection, get_connection, get_all_connections, update_sync_time,
     update_current_balance, get_all_accounts, get_account, create_account,
-    update_account_balance, delete_account, delete_transactions_by_bank, reset_database,
+    update_account_balance, get_account_by_truelayer_id, delete_account, delete_transactions_by_bank, reset_database,
 )
 from parsers import detect_bank, parse_lloyds, parse_hsbc, CATEGORY_RULES
 import open_banking as ob
@@ -310,7 +312,37 @@ def _callback_page(success: bool, message: str = "") -> HTMLResponse:
     return HTMLResponse(content=html)
 
 
+def banking_errors(func):
+    """Expone fallos del proveedor sin enviar credenciales ni respuestas crudas."""
+    @wraps(func)
+    def wrapped(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except httpx.HTTPStatusError as exc:
+            response = exc.response
+            try:
+                error = response.json().get("error")
+            except (ValueError, AttributeError):
+                error = None
+            if response.status_code == 401 or error == "invalid_grant":
+                raise HTTPException(status_code=401, detail={
+                    "code": "reconnect_required",
+                    "message": "El permiso bancario ha caducado o ya no es válido. Vuelve a conectar el banco.",
+                }) from None
+            raise HTTPException(status_code=502, detail={
+                "code": "provider_error",
+                "message": "TrueLayer no pudo completar la sincronización. Inténtalo de nuevo más tarde.",
+            }) from None
+        except httpx.RequestError:
+            raise HTTPException(status_code=503, detail={
+                "code": "provider_unavailable",
+                "message": "No se pudo contactar con TrueLayer. Inténtalo de nuevo más tarde.",
+            }) from None
+    return wrapped
+
+
 @app.post("/api/sync")
+@banking_errors
 def sync(bank: str):
     """Sincroniza transacciones de TrueLayer para el banco indicado."""
     conn_data = get_connection(bank)
@@ -329,6 +361,11 @@ def sync(bank: str):
     from_date = (datetime.utcnow() - timedelta(days=90)).strftime("%Y-%m-%dT00:00:00Z")
     tl_accounts = ob.fetch_accounts(access_token)
     tl_cards    = ob.fetch_cards(access_token)
+    if not tl_accounts and not tl_cards:
+        raise HTTPException(status_code=502, detail={
+            "code": "no_accounts",
+            "message": "TrueLayer no devolvió cuentas ni tarjetas. Revisa el permiso del banco o vuelve a conectarlo.",
+        })
     total_new = total_skipped = 0
 
     # Ensure accounts and cards are registered
@@ -339,7 +376,7 @@ def sync(bank: str):
 
     # Sync accounts
     for tl_acc in tl_accounts:
-        slug = ob.account_to_internal(tl_acc, connection_id=bank)["slug"]
+        slug = get_account_by_truelayer_id(tl_acc["account_id"])["slug"]
         txs_raw = ob.fetch_transactions(access_token, tl_acc["account_id"], from_date)
         txs = [ob.to_internal_tx(t, slug) for t in txs_raw]
         new, skipped = save_transactions(txs)
@@ -351,7 +388,7 @@ def sync(bank: str):
 
     # Sync cards
     for tl_card in tl_cards:
-        slug = ob.card_to_internal(tl_card, connection_id=bank)["slug"]
+        slug = get_account_by_truelayer_id(tl_card["account_id"])["slug"]
         txs_raw = ob.fetch_card_transactions(access_token, tl_card["account_id"], from_date)
         txs = [ob.to_internal_tx(t, slug) for t in txs_raw]
         new, skipped = save_transactions(txs)

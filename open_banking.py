@@ -84,8 +84,9 @@ def fetch_accounts(access_token: str) -> list:
         headers={"Authorization": f"Bearer {access_token}"},
         timeout=15,
     )
-    if not resp.is_success:
-        return []
+    if resp.status_code == 501:
+        return []  # El proveedor no ofrece este tipo de producto.
+    resp.raise_for_status()
     return resp.json().get("results", [])
 
 
@@ -132,8 +133,9 @@ def fetch_cards(access_token: str) -> list:
         headers={"Authorization": f"Bearer {access_token}"},
         timeout=15,
     )
-    if not resp.is_success:
-        return []
+    if resp.status_code == 501:
+        return []  # El proveedor no ofrece este tipo de producto.
+    resp.raise_for_status()
     return resp.json().get("results", [])
 
 
@@ -144,8 +146,7 @@ def fetch_card_balance(access_token: str, account_id: str) -> float | None:
         headers={"Authorization": f"Bearer {access_token}"},
         timeout=15,
     )
-    if not resp.is_success:
-        return None
+    resp.raise_for_status()
     results = resp.json().get("results", [])
     if not results:
         return None
@@ -165,8 +166,7 @@ def fetch_card_transactions(access_token: str, account_id: str, from_date: str =
         params=params,
         timeout=30,
     )
-    if not resp.is_success:
-        return []
+    resp.raise_for_status()
     return resp.json().get("results", [])
 
 
@@ -197,13 +197,15 @@ def fetch_balance(access_token: str, account_id: str) -> float | None:
         headers={"Authorization": f"Bearer {access_token}"},
         timeout=15,
     )
-    if not resp.is_success:
-        return None
+    resp.raise_for_status()
     results = resp.json().get("results", [])
     if not results:
         return None
     r = results[0]
-    return float(r.get("available", r["current"]))
+    value = r.get("available")
+    if value is None:
+        value = r.get("current")
+    return float(value) if value is not None else None
 
 
 def fetch_transactions(access_token: str, account_id: str, from_date: str = None) -> list:

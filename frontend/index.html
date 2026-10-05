@@ -768,7 +768,7 @@ function updateSyncBar() {
     const lastSync = conn.last_sync
       ? new Date(conn.last_sync).toLocaleString('es', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})
       : 'nunca';
-    statusEl.textContent = `${currentAccountMeta?.display_name || ''} conectado · última sync: ${lastSync}`;
+    statusEl.textContent = `${currentAccountMeta?.display_name || ''} · última sync: ${lastSync}`;
     syncBtn.style.display    = '';
     connectBtn.style.display = 'none';
   } else {
@@ -803,18 +803,34 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
   btn.disabled = true;
   btn.textContent = '↻ Sincronizando...';
   const connId = currentAccountMeta?.connection_id || currentAccount;
-  const res = await fetch(`${API}/api/sync?bank=${connId}`, { method: 'POST' })
-    .then(r => r.json()).catch(() => null);
-
-  btn.disabled = false;
-  btn.textContent = '↻ Sincronizar';
-
-  if (res) {
+  try {
+    const response = await fetch(`${API}/api/sync?bank=${encodeURIComponent(connId)}`, { method: 'POST' });
+    const res = await response.json().catch(() => null);
+    if (!response.ok) {
+      const detail = res?.detail;
+      if (detail?.code === 'reconnect_required' || detail?.code === 'no_accounts') {
+        document.getElementById('connDot').classList.remove('connected');
+        document.getElementById('syncStatus').textContent = detail.message;
+        const connectBtn = document.getElementById('connectBtn');
+        connectBtn.textContent = 'Reconectar banco';
+        connectBtn.style.display = '';
+      }
+      throw new Error(typeof detail === 'string' ? detail : detail?.message || 'Error al sincronizar');
+    }
+    if (!res || typeof res.new !== 'number' || typeof res.skipped !== 'number') {
+      throw new Error('Respuesta de sincronización no válida');
+    }
     showToast(`${res.new} nuevas · ${res.skipped} duplicadas`, 'ok');
     await loadConnections();
+    await populatePeriods();
+    document.getElementById('periodSelect').value = currentYear && currentMonth
+      ? `${currentYear}-${String(currentMonth).padStart(2, '0')}` : '';
     await loadAll();
-  } else {
-    showToast('Error al sincronizar', 'err');
+  } catch (error) {
+    showToast(error.message || 'Error al sincronizar', 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '↻ Sincronizar';
   }
 });
 

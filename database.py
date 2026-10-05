@@ -34,6 +34,10 @@ def init_db():
             )
         """)
         conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_truelayer_account_id
+            ON accounts(truelayer_account_id)
+        """)
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS transactions (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 date        TEXT NOT NULL,
@@ -75,13 +79,18 @@ def init_db():
                 expires_at      TEXT NOT NULL,
                 connected_at    TEXT NOT NULL,
                 last_sync       TEXT,
-                current_balance REAL
+                current_balance REAL,
+                refresh_expires_at TEXT
             )
         """)
         try:
             conn.execute("ALTER TABLE bank_connections ADD COLUMN current_balance REAL")
         except Exception:
             pass
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(bank_connections)")}
+        if "refresh_expires_at" not in columns:
+            conn.execute("ALTER TABLE bank_connections ADD COLUMN refresh_expires_at TEXT")
+
 
 def get_conn():
     return sqlite3.connect(DB_PATH)
@@ -359,24 +368,27 @@ def get_all_categories() -> list:
 
 # ── Bank connections ──────────────────────────────────────────────────────────
 def save_connection(bank: str, access_token: str, refresh_token: str, expires_in: int):
-    expires_at   = (datetime.utcnow() + timedelta(seconds=expires_in)).isoformat()
-    connected_at = datetime.utcnow().isoformat()
+    now = datetime.utcnow()
+    expires_at = (now + timedelta(seconds=expires_in)).isoformat()
+    connected_at = now.isoformat()
+    refresh_expires_at = (now + timedelta(days=90)).isoformat()
     with get_conn() as conn:
         conn.execute("""
-            INSERT INTO bank_connections (bank, access_token, refresh_token, expires_at, connected_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO bank_connections (bank, access_token, refresh_token, expires_at, connected_at, refresh_expires_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(bank) DO UPDATE SET
                 access_token=excluded.access_token,
                 refresh_token=excluded.refresh_token,
                 expires_at=excluded.expires_at,
-                connected_at=excluded.connected_at
-        """, (bank, access_token, refresh_token, expires_at, connected_at))
+                connected_at=excluded.connected_at,
+                refresh_expires_at=excluded.refresh_expires_at
+        """, (bank, access_token, refresh_token, expires_at, connected_at, refresh_expires_at))
 
 
 def get_connection(bank: str) -> dict | None:
     with get_conn() as conn:
         row = conn.execute("""
-            SELECT bank, access_token, refresh_token, expires_at, connected_at, last_sync, current_balance
+            SELECT bank, access_token, refresh_token, expires_at, connected_at, last_sync, current_balance, refresh_expires_at
             FROM bank_connections WHERE bank = ?
         """, (bank,)).fetchone()
     if not row:
@@ -384,16 +396,16 @@ def get_connection(bank: str) -> dict | None:
     return {
         "bank": row[0], "access_token": row[1], "refresh_token": row[2],
         "expires_at": row[3], "connected_at": row[4], "last_sync": row[5],
-        "current_balance": row[6],
+        "current_balance": row[6], "refresh_expires_at": row[7],
     }
 
 
 def get_all_connections() -> list:
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT bank, connected_at, last_sync FROM bank_connections"
+            "SELECT bank, connected_at, last_sync, refresh_expires_at FROM bank_connections"
         ).fetchall()
-    return [{"bank": r[0], "connected_at": r[1], "last_sync": r[2]} for r in rows]
+    return [{"bank": r[0], "connected_at": r[1], "last_sync": r[2], "refresh_expires_at": r[3]} for r in rows]
 
 
 def update_sync_time(bank: str):
@@ -452,6 +464,14 @@ def get_account(slug: str) -> dict | None:
     }
 
 
+def get_account_by_truelayer_id(account_id: str) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT slug FROM accounts WHERE truelayer_account_id = ?", (account_id,)
+        ).fetchone()
+    return get_account(row[0]) if row else None
+
+
 def create_account(slug: str, display_name: str, account_type: str = "current",
                    currency: str = "GBP", source: str = "manual",
                    connection_id: str = None, truelayer_account_id: str = None,
@@ -462,6 +482,13 @@ def create_account(slug: str, display_name: str, account_type: str = "current",
                 (slug, display_name, account_type, currency, source, connection_id,
                  truelayer_account_id, sort_order)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(truelayer_account_id) DO UPDATE SET
+                display_name=excluded.display_name,
+                account_type=excluded.account_type,
+                currency=excluded.currency,
+                source=excluded.source,
+                connection_id=excluded.connection_id,
+                truelayer_account_id=excluded.truelayer_account_id
             ON CONFLICT(slug) DO UPDATE SET
                 display_name=excluded.display_name,
                 account_type=excluded.account_type,
@@ -471,7 +498,12 @@ def create_account(slug: str, display_name: str, account_type: str = "current",
                 truelayer_account_id=excluded.truelayer_account_id
         """, (slug, display_name, account_type, currency, source,
               connection_id, truelayer_account_id, sort_order))
-        return cur.lastrowid
+        row = conn.execute(
+            "SELECT id FROM accounts WHERE truelayer_account_id = ?" if truelayer_account_id else
+            "SELECT id FROM accounts WHERE slug = ?",
+            (truelayer_account_id or slug,),
+        ).fetchone()
+        return row[0]
 
 
 def delete_account(slug: str):
