@@ -91,6 +91,28 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(database.get_transactions(bank='original-card')['total'], 1)
         self.assertEqual(database.get_account('original-card')['current_balance'], 10)
 
+    def test_custom_name_survives_reconnection_and_can_be_reset(self):
+        database.create_account('original', 'Bank name', source='truelayer',
+                                connection_id='test', truelayer_account_id='stable')
+        response = self.client.patch('/api/accounts/original/name', json={'name': '  HSBC · Común  '})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['display_name'], 'HSBC · Común')
+        database.create_account('new-slug', 'New bank name', source='truelayer',
+                                connection_id='test', truelayer_account_id='stable')
+        database.init_db()
+        account = self.client.get('/api/accounts').json()[0]
+        self.assertEqual(account['display_name'], 'HSBC · Común')
+        self.assertEqual(account['slug'], 'original')
+        response = self.client.patch('/api/accounts/original/name', json={'name': ' '})
+        self.assertEqual(response.json()['display_name'], 'New bank name')
+        self.assertIsNone(response.json()['custom_name'])
+
+    def test_rename_rejects_missing_account_and_overlong_name(self):
+        self.assertEqual(self.client.patch('/api/accounts/missing/name', json={'name': 'Test'}).status_code, 404)
+        database.create_account('manual', 'Manual')
+        self.assertEqual(self.client.patch('/api/accounts/manual/name', json={'name': 'x' * 101}).status_code, 422)
+        self.assertEqual(database.get_account('manual')['display_name'], 'Manual')
+
     def test_network_failure_is_actionable(self):
         with patch.object(ob, 'fetch_accounts', side_effect=httpx.ConnectError('offline')):
             response = self.client.post('/api/sync?bank=test')

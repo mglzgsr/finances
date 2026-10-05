@@ -416,6 +416,7 @@
         <option value="">Cargando...</option>
       </select>
       <span class="conn-dot" id="connDot"></span>
+      <button class="delete-account-btn" id="renameAccountBtn" title="Renombrar cuenta" aria-label="Renombrar cuenta">✏️</button>
       <button class="delete-account-btn" id="deleteAccountBtn" title="Eliminar cuenta">🗑</button>
     </div>
     <select class="period-select" id="periodSelect">
@@ -563,6 +564,21 @@
   </div>
 </div>
 
+<!-- Rename account modal -->
+<div class="cat-modal" id="renameAccountModal" role="dialog" aria-modal="true" aria-labelledby="renameAccountTitle">
+  <form class="cat-modal-box" id="renameAccountForm">
+    <div class="cat-modal-title" id="renameAccountTitle">Renombrar cuenta</div>
+    <label for="renameAccountInput">Nombre de la cuenta</label>
+    <input class="cat-modal-select" id="renameAccountInput" type="text" maxlength="100" autocomplete="off">
+    <div class="settings-hint">Este nombre se conservará al sincronizar. Déjalo vacío para recuperar el nombre del banco.</div>
+    <div id="renameAccountError" role="alert" style="color:#ff4d4f;font-size:12px"></div>
+    <div class="cat-modal-actions">
+      <button type="button" class="cat-modal-cancel" id="renameAccountCancel">Cancelar</button>
+      <button type="submit" class="cat-modal-confirm" id="renameAccountConfirm">Guardar</button>
+    </div>
+  </form>
+</div>
+
 <!-- Delete account modal -->
 <div class="cat-modal" id="deleteAccountModal">
   <div class="cat-modal-box">
@@ -698,12 +714,72 @@ async function loadAccounts() {
     sel.appendChild(opt);
   });
   if (accountsCache.length) {
-    currentAccount = accountsCache[0].slug;
-    currentAccountMeta = accountsCache[0];
+    currentAccountMeta = accountsCache.find(a => a.slug === currentAccount) || accountsCache[0];
+    currentAccount = currentAccountMeta.slug;
+    sel.value = currentAccount;
   }
   await loadConnections();
   await Promise.all([populatePeriods(), loadAll()]);
 }
+
+let renamingAccountSlug = null;
+const renameModal = document.getElementById('renameAccountModal');
+function closeRenameModal() {
+  renameModal.classList.remove('visible');
+  document.getElementById('renameAccountBtn').focus();
+}
+document.getElementById('renameAccountBtn').addEventListener('click', () => {
+  if (!currentAccountMeta) return;
+  renamingAccountSlug = currentAccount;
+  document.getElementById('renameAccountInput').value = currentAccountMeta.display_name;
+  document.getElementById('renameAccountError').textContent = '';
+  renameModal.classList.add('visible');
+  document.getElementById('renameAccountInput').focus();
+  document.getElementById('renameAccountInput').select();
+});
+document.getElementById('renameAccountCancel').addEventListener('click', closeRenameModal);
+renameModal.addEventListener('click', event => {
+  if (event.target === renameModal) closeRenameModal();
+});
+renameModal.addEventListener('keydown', event => {
+  if (event.key === 'Escape') closeRenameModal();
+  if (event.key === 'Tab') {
+    const controls = [...renameModal.querySelectorAll('input, button')].filter(el => !el.disabled);
+    const first = controls[0], last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault(); last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault(); first.focus();
+    }
+  }
+});
+document.getElementById('renameAccountForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = document.getElementById('renameAccountConfirm');
+  button.disabled = true;
+  document.getElementById('renameAccountError').textContent = '';
+  try {
+    const response = await fetch(`${API}/api/accounts/${encodeURIComponent(renamingAccountSlug)}/name`, {
+      method: 'PATCH', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: document.getElementById('renameAccountInput').value.trim()}),
+    });
+    if (!response.ok) throw new Error('No se pudo guardar el nombre. Inténtalo de nuevo.');
+    const account = await response.json();
+    accountsCache = accountsCache.map(a => a.slug === account.slug ? account : a);
+    const option = [...document.getElementById('accountSelect').options].find(o => o.value === account.slug);
+    if (option) option.textContent = account.display_name + (account.currency !== 'GBP' ? ` (${account.currency})` : '');
+    if (currentAccount === account.slug) {
+      currentAccountMeta = account;
+      updateSyncBar();
+    }
+    closeRenameModal();
+    showToast('Nombre de cuenta actualizado', 'ok');
+  } catch (error) {
+    document.getElementById('renameAccountError').textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
 
 document.getElementById('deleteAccountBtn').addEventListener('click', () => {
   if (!currentAccount) return;

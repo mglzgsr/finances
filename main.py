@@ -7,7 +7,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse, HTMLResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import tempfile, os, shutil
 import httpx
 from functools import wraps
@@ -29,7 +29,7 @@ from database import (
     get_setting, set_setting, get_account_balance,
     save_connection, get_connection, get_all_connections, update_sync_time,
     update_current_balance, get_all_accounts, get_account, create_account,
-    update_account_balance, get_account_by_truelayer_id, delete_account, delete_transactions_by_bank, reset_database,
+    update_account_balance, rename_account, get_account_by_truelayer_id, delete_account, delete_transactions_by_bank, reset_database,
 )
 from parsers import detect_bank, parse_lloyds, parse_hsbc, CATEGORY_RULES
 import open_banking as ob
@@ -185,6 +185,17 @@ def accounts_create(body: AccountCreate):
         sort_order=body.sort_order,
     )
     return get_account(body.slug)
+
+class AccountRename(BaseModel):
+    name: str = Field(max_length=100)
+
+
+@app.patch("/api/accounts/{slug}/name")
+def accounts_rename(slug: str, body: AccountRename):
+    if not rename_account(slug, body.name):
+        raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+    return get_account(slug)
+
 
 @app.delete("/api/database")
 def database_reset():

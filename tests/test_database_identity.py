@@ -79,6 +79,15 @@ class DatabaseIdentityTests(unittest.TestCase):
             self.assertEqual(conn.execute('SELECT bank, account_id FROM transactions').fetchall(), [('original', original)])
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM accounts').fetchone()[0], 2)
 
+    def test_old_account_schema_gets_custom_name_column(self):
+        database.create_account('original', 'Bank name')
+        with database.get_conn() as conn:
+            conn.execute('ALTER TABLE accounts DROP COLUMN custom_name')
+        database.init_db()
+        database.init_db()
+        self.assertEqual(database.get_account('original')['display_name'], 'Bank name')
+        self.assertIsNone(database.get_account('original')['custom_name'])
+
     def test_existing_schema_migrates_idempotently(self):
         with database.get_conn() as conn:
             conn.execute('DROP INDEX idx_accounts_truelayer_account_id')

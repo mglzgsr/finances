@@ -33,6 +33,9 @@ def init_db():
                 sort_order           INTEGER NOT NULL DEFAULT 0
             )
         """)
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(accounts)")}
+        if "custom_name" not in columns:
+            conn.execute("ALTER TABLE accounts ADD COLUMN custom_name TEXT")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS transactions (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -453,9 +456,9 @@ def update_current_balance(bank: str, balance: float):
 def get_all_accounts() -> list:
     with get_conn() as conn:
         rows = conn.execute("""
-            SELECT id, slug, display_name, account_type, currency, source,
+            SELECT id, slug, COALESCE(custom_name, display_name), account_type, currency, source,
                    connection_id, truelayer_account_id, current_balance, last_sync,
-                   is_active, sort_order
+                   is_active, sort_order, custom_name
             FROM accounts
             WHERE is_active = 1
             ORDER BY sort_order, id
@@ -466,6 +469,7 @@ def get_all_accounts() -> list:
             "currency": r[4], "source": r[5], "connection_id": r[6],
             "truelayer_account_id": r[7], "current_balance": r[8],
             "last_sync": r[9], "is_active": bool(r[10]), "sort_order": r[11],
+            "custom_name": r[12],
         }
         for r in rows
     ]
@@ -474,9 +478,9 @@ def get_all_accounts() -> list:
 def get_account(slug: str) -> dict | None:
     with get_conn() as conn:
         row = conn.execute("""
-            SELECT id, slug, display_name, account_type, currency, source,
+            SELECT id, slug, COALESCE(custom_name, display_name), account_type, currency, source,
                    connection_id, truelayer_account_id, current_balance, last_sync,
-                   is_active, sort_order
+                   is_active, sort_order, custom_name
             FROM accounts WHERE slug = ?
         """, (slug,)).fetchone()
     if not row:
@@ -486,7 +490,17 @@ def get_account(slug: str) -> dict | None:
         "currency": row[4], "source": row[5], "connection_id": row[6],
         "truelayer_account_id": row[7], "current_balance": row[8],
         "last_sync": row[9], "is_active": bool(row[10]), "sort_order": row[11],
+        "custom_name": row[12],
     }
+
+
+def rename_account(slug: str, name: str) -> bool:
+    with get_conn() as conn:
+        result = conn.execute(
+            "UPDATE accounts SET custom_name = ? WHERE slug = ? AND is_active = 1",
+            (name.strip() or None, slug),
+        )
+    return result.rowcount > 0
 
 
 def get_account_by_truelayer_id(account_id: str) -> dict | None:
