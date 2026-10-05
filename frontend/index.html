@@ -667,6 +667,7 @@ const currencySymbol = () => CURRENCY_SYMBOLS[currentAccountMeta?.currency] || c
 const fmt = v => currencySymbol() + Number(v).toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2});
 const fmtShort = v => currencySymbol() + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(0));
 const escapeHtml = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const accountDisplayName = slug => accountsCache.find(a => a.slug === slug)?.display_name || 'Cuenta';
 
 function showToast(msg, type='ok') {
   const t = document.getElementById('toast');
@@ -766,6 +767,9 @@ document.getElementById('renameAccountForm').addEventListener('submit', async ev
     if (!response.ok) throw new Error('No se pudo guardar el nombre. Inténtalo de nuevo.');
     const account = await response.json();
     accountsCache = accountsCache.map(a => a.slug === account.slug ? account : a);
+    document.querySelectorAll('[data-account-name]').forEach(el => {
+      if (el.dataset.accountName === account.slug) el.textContent = account.display_name;
+    });
     const option = [...document.getElementById('accountSelect').options].find(o => o.value === account.slug);
     if (option) option.textContent = account.display_name + (account.currency !== 'GBP' ? ` (${account.currency})` : '');
     if (currentAccount === account.slug) {
@@ -1075,7 +1079,7 @@ async function loadTransactions() {
           <div class="tx-icon">${icon}</div>
           <div>
             <div class="tx-name">${escapeHtml(t.description.slice(0,40))}</div>
-            <div class="tx-meta">${t.date} · ${t.bank} · <span class="cat-edit-btn" data-id="${t.id}" data-cat="${escapeHtml(t.category)}" data-desc="${escapeHtml(t.description.slice(0,60))}" data-full-desc="${escapeHtml(t.description)}">${escapeHtml(t.category)} ✏️</span></div>
+            <div class="tx-meta">${t.date} · <span data-account-name="${escapeHtml(t.bank)}">${escapeHtml(accountDisplayName(t.bank))}</span> · <span class="cat-edit-btn" data-id="${t.id}" data-cat="${escapeHtml(t.category)}" data-desc="${escapeHtml(t.description.slice(0,60))}" data-full-desc="${escapeHtml(t.description)}">${escapeHtml(t.category)} ✏️</span></div>
           </div>
         </div>
         <div class="tx-amount ${cls}">${sign}${fmt(t.amount)}</div>
@@ -1359,7 +1363,7 @@ async function loadPanelTransactions(extraParams) {
     body.innerHTML = '<div class="empty"><div class="empty-icon">📄</div><div class="empty-text">Sin transacciones</div></div>';
     return;
   }
-  document.getElementById('catPanelSubtitle').textContent = `${currentPeriodLabel()} · ${data.total} transacciones`;
+  document.getElementById('catPanelSubtitle').textContent = `${accountDisplayName(currentAccount)} · ${currentPeriodLabel()} · ${data.total} transacciones`;
 
   data.transactions.forEach(t => {
     const sign = t.is_debit ? '-' : '+';
